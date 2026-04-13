@@ -25,6 +25,66 @@ function getISOWeek(d: Date): number {
   return 1 + Math.round(((tmp.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
 }
 
+/** COLOR_CD → 실제 색상 매핑 (2자 색상코드 + 톤 L/S/D) */
+const COLOR_MAP: Record<string, { bg: string; label: string }> = {
+  BK: { bg: "#1a1a1a", label: "BLACK" },
+  IV: { bg: "#FFFFF0", label: "IVORY" },
+  BR: { bg: "#8B4513", label: "BROWN" },
+  NY: { bg: "#1B2A4A", label: "NAVY" },
+  CR: { bg: "#DC143C", label: "CRIMSON" },
+  SB: { bg: "#87CEEB", label: "SKY BLUE" },
+  BG: { bg: "#F5F5DC", label: "BEIGE" },
+  PK: { bg: "#FFB6C1", label: "PINK" },
+  TQ: { bg: "#40E0D0", label: "TURQUOISE" },
+  MG: { bg: "#808080", label: "MID GREY" },
+  GR: { bg: "#A9A9A9", label: "GREY" },
+  CG: { bg: "#C0C0C0", label: "CHARCOAL" },
+  RB: { bg: "#4169E1", label: "ROYAL BLUE" },
+  BL: { bg: "#0000CD", label: "BLUE" },
+  BD: { bg: "#800020", label: "BURGUNDY" },
+  KA: { bg: "#C3B091", label: "KHAKI" },
+  YE: { bg: "#FFD700", label: "YELLOW" },
+  RD: { bg: "#E53E3E", label: "RED" },
+  LV: { bg: "#E6E6FA", label: "LAVENDER" },
+  IN: { bg: "#4B0082", label: "INDIGO" },
+  GN: { bg: "#228B22", label: "GREEN" },
+  MT: { bg: "#98FF98", label: "MINT" },
+  OL: { bg: "#808000", label: "OLIVE" },
+  WI: { bg: "#F5F5F5", label: "WHITE" },
+  CA: { bg: "#D2691E", label: "CAMEL" },
+};
+
+const TONE_ADJUST: Record<string, number> = { L: 30, S: 0, D: -40 };
+
+function getColorInfo(code: string): { bg: string; label: string; isDark: boolean } {
+  if (!code || code.length < 2) return { bg: "#e2e8f0", label: code, isDark: false };
+  const base = code.slice(0, 2).toUpperCase();
+  const tone = code.length >= 3 ? code[2].toUpperCase() : "S";
+  const info = COLOR_MAP[base];
+  if (!info) return { bg: "#e2e8f0", label: code, isDark: false };
+
+  // 톤에 따라 밝기 조절
+  let bg = info.bg;
+  const adj = TONE_ADJUST[tone] || 0;
+  if (adj !== 0) {
+    const r = parseInt(bg.slice(1, 3), 16);
+    const g = parseInt(bg.slice(3, 5), 16);
+    const b = parseInt(bg.slice(5, 7), 16);
+    const clamp = (v: number) => Math.max(0, Math.min(255, v + adj));
+    bg = `#${clamp(r).toString(16).padStart(2, "0")}${clamp(g).toString(16).padStart(2, "0")}${clamp(b).toString(16).padStart(2, "0")}`;
+  }
+
+  // 어두운 색 판별 (luminance)
+  const hex = bg.replace("#", "");
+  const rr = parseInt(hex.slice(0, 2), 16);
+  const gg = parseInt(hex.slice(2, 4), 16);
+  const bb = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.299 * rr + 0.587 * gg + 0.114 * bb) / 255;
+  const isDark = luminance < 0.5;
+
+  return { bg, label: code, isDark };
+}
+
 interface Props {
   brand: string;
   season: string;
@@ -755,9 +815,21 @@ export default function OrderDashboard({ brand, season }: Props) {
                           <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{row.prdt_nm}</div>
                         </td>
                         <td className="px-3 py-2">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-[11px] text-slate-600 font-mono">
-                            {row.color_cd}
-                          </span>
+                          {(() => {
+                            const ci = getColorInfo(row.color_cd);
+                            return (
+                              <span
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono font-medium"
+                                style={{
+                                  backgroundColor: ci.bg,
+                                  color: ci.isDark ? "#ffffff" : "#1e293b",
+                                  border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}`,
+                                }}
+                              >
+                                {row.color_cd}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-3 py-2 text-right font-mono tabular-nums font-medium text-slate-800">
                           {row.stor_qty.toLocaleString()}
