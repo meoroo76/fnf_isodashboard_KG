@@ -37,6 +37,8 @@ export interface OrderInbound {
   PO_NO: string;
   STOR_SCHD_DT: string;
   STOR_DT: string;
+  INDC_DT_CNFM: string;
+  INDC_DT_REQ: string;
   [key: string]: unknown;
 }
 

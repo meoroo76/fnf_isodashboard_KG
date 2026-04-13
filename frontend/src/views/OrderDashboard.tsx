@@ -270,36 +270,67 @@ export default function OrderDashboard({ brand, season }: Props) {
     return rows;
   }, [currData, prevData]);
 
-  // 입고 추이 차트 (주차별)
+  // 입고 진도율 차트 (시즌 기준 경과일 → 누적 입고율 %)
   const weeklyTrend = useMemo(() => {
     if (!currData.length) return [];
 
-    const weekMap = new Map<string, { curr: number; prev: number }>();
+    // 시즌 시작/종료일 계산
+    const isFW = season.toUpperCase().endsWith("F");
+    const seasonYear = 2000 + parseInt(season.slice(0, 2));
+    const startDate = isFW
+      ? new Date(seasonYear, 6, 1)    // FW: 당해 7/1
+      : new Date(seasonYear - 1, 11, 1); // SS: 전년 12/1
+    const endDate = isFW
+      ? new Date(seasonYear, 10, 30)   // FW: 당해 11/30
+      : new Date(seasonYear, 4, 31);    // SS: 당해 5/31
 
-    const addToWeek = (data: OrderInbound[], key: "curr" | "prev") => {
-      data.forEach((r) => {
-        const dt = r.STOR_DT;
-        if (!dt) return;
-        const d = new Date(dt);
-        const weekNum = Math.ceil(((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000 + 1) / 7);
-        const wk = `${weekNum}w`;
-        const cur = weekMap.get(wk) || { curr: 0, prev: 0 };
-        cur[key] += r.STOR_QTY || 0;
-        weekMap.set(wk, cur);
+    const maxElapsed = Math.round((endDate.getTime() - startDate.getTime()) / 86400000);
+
+    // 경과일별 입고수량 누적 → 진도율 계산
+    const calcProgress = (data: OrderInbound[], totalOrdQty: number) => {
+      const stored = data.filter((r) => (r.STOR_QTY || 0) > 0 && r.INDC_DT_CNFM);
+      const dayMap = new Map<number, number>();
+
+      stored.forEach((r) => {
+        const dt = new Date(r.INDC_DT_CNFM as string);
+        let elapsed = Math.round((dt.getTime() - startDate.getTime()) / 86400000);
+        elapsed = Math.max(0, Math.min(elapsed, maxElapsed));
+        dayMap.set(elapsed, (dayMap.get(elapsed) || 0) + (r.STOR_QTY || 0));
       });
+
+      // 15일 간격으로 구간 집계 → 누적 진도율
+      const points: { label: string; elapsed: number; rate: number }[] = [];
+      let cumQty = 0;
+      const denom = Math.max(totalOrdQty, 1);
+
+      for (let d = 0; d <= maxElapsed; d += 7) {
+        // 이 구간까지의 수량 합산
+        for (let dd = (d === 0 ? 0 : d - 6); dd <= d; dd++) {
+          cumQty += dayMap.get(dd) || 0;
+        }
+        const refDate = new Date(startDate.getTime() + d * 86400000);
+        const label = `${refDate.getMonth() + 1}/${refDate.getDate()}`;
+        points.push({ label, elapsed: d, rate: (cumQty / denom) * 100 });
+      }
+
+      return points;
     };
 
-    addToWeek(currData, "curr");
-    addToWeek(prevData, "prev");
+    const currOrdQty = currData.reduce((s, r) => s + (r.ORD_QTY || 0), 0);
+    const prevOrdQty = prevData.reduce((s, r) => s + (r.ORD_QTY || 0), 0);
 
-    return [...weekMap.entries()]
-      .sort(([a], [b]) => parseInt(a) - parseInt(b))
-      .map(([week, vals]) => ({
-        week,
-        당해: vals.curr,
-        전년: vals.prev,
-      }));
-  }, [currData, prevData]);
+    const currPoints = calcProgress(currData, currOrdQty);
+    const prevPoints = calcProgress(prevData, prevOrdQty);
+
+    // 당해/전년을 elapsed 기준으로 병합
+    const merged = currPoints.map((cp, i) => ({
+      label: cp.label,
+      당해: Math.round(cp.rate * 10) / 10,
+      전년: prevPoints[i] ? Math.round(prevPoints[i].rate * 10) / 10 : 0,
+    }));
+
+    return merged;
+  }, [currData, prevData, season]);
 
   if (loading) {
     return (
@@ -403,7 +434,7 @@ export default function OrderDashboard({ brand, season }: Props) {
       {/* 주차별 입고 추이 (전체폭) */}
       <div className="bg-white rounded-2xl border border-slate-100 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-sm font-bold text-slate-700">📈 주차별 입고 추이</h3>
+          <h3 className="text-sm font-bold text-slate-700">📈 입고 진도율 (수량 기준, 전년비)</h3>
           <div className="flex items-center gap-6 text-xs text-slate-400">
             <span className="flex items-center gap-1.5">
               <span className="w-4 h-0.5 bg-indigo-500 rounded" /> {season}
@@ -422,8 +453,8 @@ export default function OrderDashboard({ brand, season }: Props) {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-            <XAxis dataKey="week" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={55} />
+            <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={45} domain={[0, 110]} tickFormatter={(v: number) => `${v}%`} />
             <Tooltip
               contentStyle={{
                 background: "#0f172a",
