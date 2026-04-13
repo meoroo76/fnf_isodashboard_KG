@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --sidebar-bg: #0f172a;
+  --sidebar-text: #94a3b8;
+  --sidebar-active: #818cf8;
+  --card-bg: #ffffff;
+  --border: #e2e8f0;
+  --accent: #4f46e5;
+  --accent-light: #818cf8;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), 'Noto Sans KR', -apple-system, sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Table */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  background: #f1f5f9;
+  font-weight: 600;
+  padding: 10px 12px;
+  text-align: right;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+  color: #475569;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.data-table th:first-child { text-align: left; }
+.data-table td {
+  padding: 8px 12px;
+  text-align: right;
+  border-bottom: 1px solid #f1f5f9;
+  font-variant-numeric: tabular-nums;
+}
+.data-table td:first-child {
+  text-align: left;
+  font-weight: 500;
+  color: #1e293b;
+}
+.data-table tr:hover { background: #f8fafc; }
+.data-table .indent-1 { padding-left: 24px; }
+.data-table .indent-2 { padding-left: 40px; }
+.data-table .group-header {
+  font-weight: 700;
+  background: #fafbfc;
+  color: #0f172a;
+}
+
+/* Positive/Negative color coding */
+.val-positive { color: #ef4444; font-weight: 600; }
+.val-negative { color: #3b82f6; font-weight: 600; }
+.val-neutral { color: #64748b; }
+
+/* Cell backgrounds for heatmap-style tables */
+.cell-green-1 { background: #f0fdf4; }
+.cell-green-2 { background: #dcfce7; }
+.cell-green-3 { background: #bbf7d0; }
+.cell-red-1 { background: #fef2f2; }
+.cell-red-2 { background: #fee2e2; }
+.cell-red-3 { background: #fecaca; }
+.cell-yellow-1 { background: #fefce8; }
