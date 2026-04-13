@@ -4,41 +4,42 @@ import { useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import OrderDashboard from "@/views/OrderDashboard";
 import DeliveryMgmt from "@/views/DeliveryMgmt";
+import SupplierInput from "@/views/SupplierInput";
+import ReportGen from "@/views/ReportGen";
 import CostOverview from "@/views/CostOverview";
 import CostBreakdown from "@/views/CostBreakdown";
+import MarkupAnalysis from "@/views/MarkupAnalysis";
+import SeasonCompare from "@/views/SeasonCompare";
 import ClaimDashboard from "@/views/ClaimDashboard";
 import DefectAnalysis from "@/views/DefectAnalysis";
+import QcResults from "@/views/QcResults";
 import VocAnalysis from "@/views/VocAnalysis";
 import SupplierScorecard from "@/views/SupplierScorecard";
-import PlaceholderPage from "@/views/PlaceholderPage";
-
-function makePlaceholder(title: string) {
-  return function PH(props: { brand: string; season: string }) {
-    return <PlaceholderPage {...props} title={title} />;
-  };
-}
+import SupplierRanking from "@/views/SupplierRanking";
+import SupplierDetail from "@/views/SupplierDetail";
+import SupplierEval from "@/views/SupplierEval";
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType<{ brand: string; season: string }>> = {
   // 생산
   order_dashboard: OrderDashboard,
   delivery_mgmt: DeliveryMgmt,
-  supplier_input: makePlaceholder("데이터 입력"),
-  report_gen: makePlaceholder("리포트"),
+  supplier_input: SupplierInput,
+  report_gen: ReportGen,
   // 원가
   cost_overview: CostOverview,
   cost_breakdown: CostBreakdown,
-  markup_analysis: makePlaceholder("마크업 분석"),
-  season_compare: makePlaceholder("시즌 비교"),
+  markup_analysis: MarkupAnalysis,
+  season_compare: SeasonCompare,
   // 품질
   claim_dashboard: ClaimDashboard,
   defect_analysis: DefectAnalysis,
-  qc_results: makePlaceholder("검사 결과"),
+  qc_results: QcResults,
   voc_analysis: VocAnalysis,
   // 협력사
   scorecard: SupplierScorecard,
-  ranking: makePlaceholder("랭킹"),
-  detail_panel: makePlaceholder("상세 분석"),
-  evaluation: makePlaceholder("평가 입력"),
+  ranking: SupplierRanking,
+  detail_panel: SupplierDetail,
+  evaluation: SupplierEval,
 };
 
 export default function Home() {
