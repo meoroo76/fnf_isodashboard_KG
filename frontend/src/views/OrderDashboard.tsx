@@ -727,6 +727,22 @@ export default function OrderDashboard({ brand, season }: Props) {
                     ))
                   )}
                 </tbody>
+                {weeklyInboundList.length > 0 && (
+                  <tfoot className="sticky bottom-0 bg-slate-800 text-white">
+                    <tr>
+                      <td className="px-4 py-2.5 text-[11px] font-bold" colSpan={2}>
+                        합계
+                      </td>
+                      <td className="px-3 py-2.5 text-[11px] font-bold text-center">
+                        {new Set(weeklyInboundList.map((r) => r.prdt_cd)).size} STY · {weeklyInboundList.length} SKU
+                      </td>
+                      <td className="px-3 py-2.5 text-[11px] font-bold text-right font-mono tabular-nums">
+                        {weeklyInboundList.reduce((s, r) => s + r.stor_qty, 0).toLocaleString()} PCS
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>
