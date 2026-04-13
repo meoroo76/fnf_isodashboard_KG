@@ -100,10 +100,12 @@ export default function OrderDashboard({ brand, season }: Props) {
     const prevAmtProgress = prevOrdAmt > 0 ? (prevStorAmt / prevOrdAmt) * 100 : 0;
 
     // 판매 데이터 (seasonSale에서 추출)
-    const currSaleAmt = Number(seasonSale["당해누적판매금액"] || seasonSale["당해판매금액"] || 0);
-    const prevSaleAmt = Number(seasonSale["전년누적판매금액"] || seasonSale["전년판매금액"] || 0);
+    const currSaleAmt = Number(seasonSale["당해누적판매택가"] || seasonSale["당해누적판매액"] || 0);
+    const prevSaleAmt = Number(seasonSale["전년마감판매택가"] || seasonSale["전년누적판매택가"] || 0);
     const currSaleRate = Number(seasonSale["당해판매율"] || 0);
-    const prevSaleRate = Number(seasonSale["전년판매율"] || 0);
+    const prevSaleRate = Number(seasonSale["전년판매율"] || seasonSale["전년마감판매율"] || 0);
+    const currSaleQty = Number(seasonSale["당해누적판매수량"] || 0);
+    const prevSaleQty = Number(seasonSale["전년마감판매수량"] || 0);
 
     return [
       {
@@ -176,32 +178,46 @@ export default function OrderDashboard({ brand, season }: Props) {
         unit: currSaleAmt > 0 ? "억원" : "",
         icon: "💰",
         delta: calcYoY(currSaleAmt, prevSaleAmt),
-        prevValue: prevSaleAmt > 0 ? `전년 ${formatNumber(prevSaleAmt, "억")}억` : "전년 데이터 없음",
+        prevValue: prevSaleAmt > 0 ? `전년 ${formatNumber(prevSaleAmt, "억")}억 · ${prevSaleQty.toLocaleString()} PCS` : "전년 데이터 없음",
         accent: "#d97706",
         sub: {
           label: "판매율",
           value: currSaleRate > 0 ? currSaleRate.toFixed(1) : "0.0",
           delta: currSaleRate - prevSaleRate,
-          detail: prevSaleRate > 0 ? `전년 판매율 ${prevSaleRate.toFixed(1)}%` : "",
+          detail: `판매 ${currSaleQty.toLocaleString()} PCS · 전년 판매율 ${prevSaleRate > 0 ? prevSaleRate.toFixed(1) + "%" : "-"}`,
         },
       },
     ];
   }, [currData, prevData]);
+
+  // 카테고리 정렬 순서
+  const CAT_ORDER = ["Total", "다운", "아우터", "맨투맨", "티셔츠", "팬츠", "가방", "볼캡/햇/비니", "시즌모자", "기타용품"];
 
   // 카테고리별 집계 (테이블용)
   const categoryData = useMemo(() => {
     if (!currData.length) return [];
 
     const aggregate = (data: OrderInbound[]) => {
-      const map = new Map<string, { ordQty: number; ordAmt: number; storQty: number; storAmt: number; styles: Set<string> }>();
+      const map = new Map<string, {
+        ordQty: number; ordAmt: number; storQty: number; storAmt: number;
+        styles: Set<string>; storStyles: Set<string>; skus: number; storSkus: number;
+      }>();
       data.forEach((r) => {
-        const cat = r.ITEM_GROUP || "기타";
-        const cur = map.get(cat) || { ordQty: 0, ordAmt: 0, storQty: 0, storAmt: 0, styles: new Set<string>() };
+        const cat = r.ITEM_GROUP || "기타용품";
+        const cur = map.get(cat) || {
+          ordQty: 0, ordAmt: 0, storQty: 0, storAmt: 0,
+          styles: new Set<string>(), storStyles: new Set<string>(), skus: 0, storSkus: 0,
+        };
         cur.ordQty += r.ORD_QTY || 0;
         cur.ordAmt += r.ORD_TAG_AMT || 0;
         cur.storQty += r.STOR_QTY || 0;
         cur.storAmt += r.STOR_TAG_AMT || 0;
         cur.styles.add(r.PRDT_CD);
+        cur.skus += 1;
+        if ((r.STOR_QTY || 0) > 0) {
+          cur.storStyles.add(r.PRDT_CD);
+          cur.storSkus += 1;
+        }
         map.set(cat, cur);
       });
       return map;
@@ -209,66 +225,50 @@ export default function OrderDashboard({ brand, season }: Props) {
 
     const currAgg = aggregate(currData);
     const prevAgg = aggregate(prevData);
-    const allCats = new Set([...currAgg.keys(), ...prevAgg.keys()]);
 
-    const totalCurr = { ordQty: 0, ordAmt: 0, storQty: 0, storAmt: 0, styles: 0 };
-    const totalPrev = { ordQty: 0, ordAmt: 0, storQty: 0, storAmt: 0, styles: 0 };
-
-    const rows: Record<string, unknown>[] = [];
-
-    [...allCats].sort().forEach((cat) => {
-      const c = currAgg.get(cat);
-      const p = prevAgg.get(cat);
-      const cOrdQty = c?.ordQty || 0;
-      const pOrdQty = p?.ordQty || 0;
-      const cOrdAmt = c?.ordAmt || 0;
-      const pOrdAmt = p?.ordAmt || 0;
-      const cStorQty = c?.storQty || 0;
-      const pStorQty = p?.storQty || 0;
-      const cStyles = c?.styles.size || 0;
-      const pStyles = p?.styles.size || 0;
-
-      totalCurr.ordQty += cOrdQty;
-      totalCurr.ordAmt += cOrdAmt;
-      totalCurr.storQty += cStorQty;
-      totalCurr.styles += cStyles;
-      totalPrev.ordQty += pOrdQty;
-      totalPrev.ordAmt += pOrdAmt;
-      totalPrev.storQty += pStorQty;
-      totalPrev.styles += pStyles;
-
-      rows.push({
-        category: cat,
-        currStyles: cStyles,
-        prevStyles: pStyles,
-        stylesDelta: cStyles - pStyles,
-        currOrdAmt: cOrdAmt,
-        prevOrdAmt: pOrdAmt,
-        ordAmtGrowth: calcYoY(cOrdAmt, pOrdAmt),
-        currStorQty: cStorQty,
-        prevStorQty: pStorQty,
-        storQtyGrowth: calcYoY(cStorQty, pStorQty),
-        storRate: cOrdQty > 0 ? (cStorQty / cOrdQty) * 100 : 0,
-      });
+    const buildRow = (cat: string, c: ReturnType<typeof aggregate> extends Map<string, infer V> ? V : never, p: ReturnType<typeof aggregate> extends Map<string, infer V> ? V : never, isTotal = false) => ({
+      category: cat,
+      // 스타일수
+      currStyles: c.styles.size, prevStyles: p.styles.size, stylesDelta: c.styles.size - p.styles.size,
+      styleStorRate: c.styles.size > 0 ? (c.storStyles.size / c.styles.size) * 100 : 0,
+      // SKU수
+      currSkus: c.skus, prevSkus: p.skus, skusDelta: c.skus - p.skus,
+      skuStorRate: c.skus > 0 ? (c.storSkus / c.skus) * 100 : 0,
+      // 수량
+      currOrdQty: c.ordQty, prevOrdQty: p.ordQty, qtyGrowth: calcYoY(c.ordQty, p.ordQty),
+      qtyStorRate: c.ordQty > 0 ? (c.storQty / c.ordQty) * 100 : 0,
+      // 금액
+      currOrdAmt: c.ordAmt, prevOrdAmt: p.ordAmt, amtGrowth: calcYoY(c.ordAmt, p.ordAmt),
+      amtStorRate: c.ordAmt > 0 ? (c.storAmt / c.ordAmt) * 100 : 0,
+      _isTotal: isTotal,
     });
 
-    // Total row at top
-    rows.unshift({
-      category: "Total",
-      currStyles: totalCurr.styles,
-      prevStyles: totalPrev.styles,
-      stylesDelta: totalCurr.styles - totalPrev.styles,
-      currOrdAmt: totalCurr.ordAmt,
-      prevOrdAmt: totalPrev.ordAmt,
-      ordAmtGrowth: calcYoY(totalCurr.ordAmt, totalPrev.ordAmt),
-      currStorQty: totalCurr.storQty,
-      prevStorQty: totalPrev.storQty,
-      storQtyGrowth: calcYoY(totalCurr.storQty, totalPrev.storQty),
-      storRate: totalCurr.ordQty > 0 ? (totalCurr.storQty / totalCurr.ordQty) * 100 : 0,
-      _isTotal: true,
+    const emptyAgg = { ordQty: 0, ordAmt: 0, storQty: 0, storAmt: 0, styles: new Set<string>(), storStyles: new Set<string>(), skus: 0, storSkus: 0 };
+
+    // 개별 카테고리 행
+    const catRows = CAT_ORDER.filter((c) => c !== "Total").map((cat) => {
+      const c = currAgg.get(cat) || emptyAgg;
+      const p = prevAgg.get(cat) || emptyAgg;
+      return buildRow(cat, c, p);
+    }).filter((r) => r.currStyles > 0 || r.prevStyles > 0);
+
+    // Total 행
+    const totalC = { ...emptyAgg, styles: new Set<string>(), storStyles: new Set<string>() };
+    const totalP = { ...emptyAgg, styles: new Set<string>(), storStyles: new Set<string>() };
+    currData.forEach((r) => {
+      totalC.ordQty += r.ORD_QTY || 0; totalC.ordAmt += r.ORD_TAG_AMT || 0;
+      totalC.storQty += r.STOR_QTY || 0; totalC.storAmt += r.STOR_TAG_AMT || 0;
+      totalC.styles.add(r.PRDT_CD); totalC.skus += 1;
+      if ((r.STOR_QTY || 0) > 0) { totalC.storStyles.add(r.PRDT_CD); totalC.storSkus += 1; }
+    });
+    prevData.forEach((r) => {
+      totalP.ordQty += r.ORD_QTY || 0; totalP.ordAmt += r.ORD_TAG_AMT || 0;
+      totalP.storQty += r.STOR_QTY || 0; totalP.storAmt += r.STOR_TAG_AMT || 0;
+      totalP.styles.add(r.PRDT_CD); totalP.skus += 1;
+      if ((r.STOR_QTY || 0) > 0) { totalP.storStyles.add(r.PRDT_CD); totalP.storSkus += 1; }
     });
 
-    return rows;
+    return [buildRow("Total", totalC, totalP, true), ...catRows];
   }, [currData, prevData]);
 
   // 입고 진도율 메트릭 선택 (기본: 스타일수)
@@ -348,19 +348,25 @@ export default function OrderDashboard({ brand, season }: Props) {
     const currPoints = calcProgress(currData, currDates, progressMetric);
     const prevPoints = calcProgress(prevData, prevDates, progressMetric);
 
+    // 당해 시즌: 오늘 날짜까지만 표시
+    const today = new Date();
+    const todayElapsed = Math.round((today.getTime() - currDates.start.getTime()) / 86400000);
+
     // 당해 시즌 날짜 라벨 + 전년은 동일 경과일로 매칭
-    const merged = currPoints.map((cp) => {
-      const refDate = new Date(currDates.start.getTime() + cp.elapsed * 86400000);
-      const label = `${refDate.getMonth() + 1}/${refDate.getDate()}`;
-      const prevMatch = prevPoints.find((pp) => pp.elapsed === cp.elapsed);
-      return {
-        label,
-        당해: Math.round(cp.rate * 10) / 10,
-        전년: prevMatch ? Math.round(prevMatch.rate * 10) / 10 : 0,
-        currCum: Math.round(cp.cumValue * 100) / 100,
-        prevCum: prevMatch ? Math.round(prevMatch.cumValue * 100) / 100 : 0,
-      };
-    });
+    const merged = currPoints
+      .filter((cp) => cp.elapsed <= todayElapsed) // 당해는 오늘까지만
+      .map((cp) => {
+        const refDate = new Date(currDates.start.getTime() + cp.elapsed * 86400000);
+        const label = `${refDate.getMonth() + 1}/${refDate.getDate()}`;
+        const prevMatch = prevPoints.find((pp) => pp.elapsed === cp.elapsed);
+        return {
+          label,
+          당해: Math.round(cp.rate * 10) / 10,
+          전년: prevMatch ? Math.round(prevMatch.rate * 10) / 10 : 0,
+          currCum: Math.round(cp.cumValue * 100) / 100,
+          prevCum: prevMatch ? Math.round(prevMatch.cumValue * 100) / 100 : 0,
+        };
+      });
 
     return merged;
   }, [currData, prevData, season, prevSeason, progressMetric]);
@@ -385,55 +391,47 @@ export default function OrderDashboard({ brand, season }: Props) {
     return undefined;
   };
 
+  const fmtN = (v: unknown) => Number(v).toLocaleString();
+  const fmtDelta = (v: unknown) => { const n = Number(v); return n > 0 ? `+${n}` : String(n); };
+  const fmtPct = (v: unknown) => `${Number(v).toFixed(1)}%`;
+  const pctColor = (v: unknown) => {
+    const n = Number(v);
+    if (n >= 90) return "#f0fdf4";
+    if (n >= 70) return "#fefce8";
+    if (n > 0) return "#fef2f2";
+    return undefined;
+  };
+
   const tableColumns = [
     { key: "category", label: "카테고리", align: "left" as const },
-    { key: "currStyles", label: season, align: "right" as const, format: (v: unknown) => Number(v).toLocaleString() },
-    { key: "prevStyles", label: prevSeason, align: "right" as const, format: (v: unknown) => Number(v).toLocaleString() },
-    {
-      key: "stylesDelta",
-      label: "증감",
-      align: "right" as const,
-      format: (v: unknown) => { const n = Number(v); return n > 0 ? `+${n}` : String(n); },
-      colorCode: (v: unknown) => growthColor(v),
-    },
+    // 스타일수
+    { key: "currStyles", label: season, align: "right" as const, format: fmtN },
+    { key: "prevStyles", label: prevSeason, align: "right" as const, format: fmtN },
+    { key: "stylesDelta", label: "증감", align: "right" as const, format: fmtDelta, colorCode: growthColor },
+    { key: "styleStorRate", label: `${season} 입고율`, align: "right" as const, format: fmtPct, colorCode: pctColor },
+    // SKU수
+    { key: "currSkus", label: season, align: "right" as const, format: fmtN },
+    { key: "prevSkus", label: prevSeason, align: "right" as const, format: fmtN },
+    { key: "skusDelta", label: "증감", align: "right" as const, format: fmtDelta, colorCode: growthColor },
+    { key: "skuStorRate", label: `${season} 입고율`, align: "right" as const, format: fmtPct, colorCode: pctColor },
+    // 수량
+    { key: "currOrdQty", label: season, align: "right" as const, format: fmtN },
+    { key: "prevOrdQty", label: prevSeason, align: "right" as const, format: fmtN },
+    { key: "qtyGrowth", label: "성장률", align: "right" as const, format: (v: unknown) => formatDelta(Number(v)), colorCode: growthColor },
+    { key: "qtyStorRate", label: "입고율", align: "right" as const, format: fmtPct, colorCode: pctColor },
+    // 금액
     { key: "currOrdAmt", label: season, align: "right" as const, format: (v: unknown) => formatNumber(Number(v), "억") },
     { key: "prevOrdAmt", label: prevSeason, align: "right" as const, format: (v: unknown) => formatNumber(Number(v), "억") },
-    {
-      key: "ordAmtGrowth",
-      label: "성장률",
-      align: "right" as const,
-      format: (v: unknown) => formatDelta(Number(v)),
-      colorCode: (v: unknown) => growthColor(v),
-    },
-    { key: "currStorQty", label: season, align: "right" as const, format: (v: unknown) => Number(v).toLocaleString() },
-    { key: "prevStorQty", label: prevSeason, align: "right" as const, format: (v: unknown) => Number(v).toLocaleString() },
-    {
-      key: "storQtyGrowth",
-      label: "성장률",
-      align: "right" as const,
-      format: (v: unknown) => formatDelta(Number(v)),
-      colorCode: (v: unknown) => growthColor(v),
-    },
-    {
-      key: "storRate",
-      label: "입고율",
-      align: "right" as const,
-      format: (v: unknown) => `${Number(v).toFixed(1)}%`,
-      colorCode: (v: unknown) => {
-        const n = Number(v);
-        if (n >= 90) return "#f0fdf4";
-        if (n >= 70) return "#fefce8";
-        return "#fef2f2";
-      },
-    },
+    { key: "amtGrowth", label: "성장률", align: "right" as const, format: (v: unknown) => formatDelta(Number(v)), colorCode: growthColor },
+    { key: "amtStorRate", label: "입고율", align: "right" as const, format: fmtPct, colorCode: pctColor },
   ];
 
   const columnGroups = [
     { label: "카테고리", colSpan: 1 },
-    { label: "스타일수", colSpan: 3, color: "#f0f9ff" },
-    { label: "발주금액 (억원)", colSpan: 3, color: "#faf5ff" },
-    { label: "입고수량", colSpan: 3, color: "#f0fdf4" },
-    { label: "", colSpan: 1, color: "#fffbeb" },
+    { label: "스타일수", colSpan: 4, color: "#f0f9ff" },
+    { label: "SKU수", colSpan: 4, color: "#faf5ff" },
+    { label: "수량 (PCS)", colSpan: 4, color: "#f0fdf4" },
+    { label: "금액 (억원)", colSpan: 4, color: "#fffbeb" },
   ];
 
   return (
