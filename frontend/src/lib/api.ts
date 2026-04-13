@@ -111,4 +111,7 @@ export const api = {
 
   getSeasonSaleSummary: (brdCd: string, sesn: string) =>
     fetchApi<ApiDataResponse<Record<string, unknown>>>("/api/season-sale/summary", { brd_cd: brdCd, sesn }),
+
+  getStyleImages: (prdtCds: string[]) =>
+    fetchApi<ApiDataResponse<Record<string, string | null>>>("/api/style-images", { prdt_cds: prdtCds.join(",") }),
 };

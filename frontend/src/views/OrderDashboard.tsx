@@ -367,6 +367,21 @@ export default function OrderDashboard({ brand, season }: Props) {
       }));
   }, [currData, selectedWeek]);
 
+  // 스타일 이미지 URL 로드
+  const [styleImages, setStyleImages] = useState<Record<string, string | null>>({});
+
+  useEffect(() => {
+    if (!weeklyInboundList.length) return;
+    const codes = [...new Set(weeklyInboundList.map((r) => r.prdt_cd))];
+    // 이미 로드된 코드 제외
+    const newCodes = codes.filter((c) => !(c in styleImages));
+    if (!newCodes.length) return;
+
+    api.getStyleImages(newCodes).then((res) => {
+      setStyleImages((prev) => ({ ...prev, ...res.data }));
+    }).catch(() => {});
+  }, [weeklyInboundList]);
+
   // 시즌별 시작/종료일 계산 (각 시즌마다 자기 기준)
   const getSeasonDates = (sesn: string) => {
     const isFW = sesn.toUpperCase().endsWith("F");
@@ -708,7 +723,7 @@ export default function OrderDashboard({ brand, season }: Props) {
                 <thead className="sticky top-0 bg-slate-50 z-10">
                   <tr>
                     <th className="text-left px-4 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">이미지</th>
-                    <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">스타일</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">품번</th>
                     <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">칼라</th>
                     <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고수량</th>
                     <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고일</th>
@@ -722,9 +737,18 @@ export default function OrderDashboard({ brand, season }: Props) {
                     weeklyInboundList.map((row, idx) => (
                       <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50">
                         <td className="px-4 py-2">
-                          <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-[9px]">
-                            IMG
-                          </div>
+                          {styleImages[row.prdt_cd] ? (
+                            <img
+                              src={styleImages[row.prdt_cd]!}
+                              alt={row.prdt_cd}
+                              className="w-10 h-10 rounded-lg object-cover bg-slate-50"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-[8px]">N/A</div>'; }}
+                            />
+                          ) : (
+                            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-300 text-[8px]">
+                              {styleImages[row.prdt_cd] === null ? "N/A" : "..."}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <div className="font-medium text-slate-800 text-[11px]">{row.prdt_cd}</div>

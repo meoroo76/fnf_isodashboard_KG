@@ -120,3 +120,58 @@ def season_sale_summary(
 @app.get("/api/kpi-registry")
 def kpi_registry():
     return {"registry": KPI_CARD_REGISTRY}
+
+
+# ── 스타일 이미지 URL 조회 (KG API 프록시) ──
+@app.get("/api/style-images")
+def style_images(prdt_cds: str = Query(..., description="콤마 구분 품번 리스트")):
+    """KG API로 품번별 이미지 URL 일괄 조회"""
+    import json
+    import subprocess
+    import tempfile
+    import glob
+    import os
+
+    codes = [c.strip() for c in prdt_cds.split(",") if c.strip()]
+    if not codes:
+        return {"data": {}}
+
+    result_map: dict[str, str | None] = {}
+
+    # 배치로 조회 (전체 한번에)
+    brd_cd = "V" if codes[0].startswith("V") else "ST"
+    filters = [
+        {"system_code": brd_cd, "system_field_name": "BRD_CD"},
+    ]
+    # 품번 하나씩은 비효율 → 시즌 필터로 한번에 가져오기
+    # PRDT_CD 필터는 Like 검색이므로 개별 호출 필요
+    for code in codes[:30]:  # 최대 30개
+        try:
+            body = json.dumps({
+                "filters": [
+                    {"system_code": brd_cd, "system_field_name": "BRD_CD"},
+                    {"system_code": code, "system_field_name": "PRDT_CD"},
+                ],
+                "meta_info": {"data_size_only": False, "data_type": "list", "requested_record_rows": 1},
+            })
+            proc = subprocess.run(
+                ["dcs-ai-cli", "fetch",
+                 "--endpoint", "/api/v1/hq/search/product_codes_properties",
+                 "--method", "POST",
+                 "--body", body,
+                 "--name", f"img_{code}"],
+                capture_output=True, text=True, timeout=10,
+            )
+            tmpdir = tempfile.gettempdir()
+            files = sorted(glob.glob(os.path.join(tmpdir, "dcs-ai-cli", f"img_{code}_*.json")))
+            if files:
+                raw = json.loads(open(files[-1], encoding="utf-8").read())
+                data = raw.get("data", raw) if isinstance(raw, dict) else raw
+                if isinstance(data, list) and data:
+                    result_map[code] = data[0].get("PRDT_IMG_URL")
+                else:
+                    result_map[code] = None
+        except Exception:
+            result_map[code] = None
+
+    return {"data": result_map}
