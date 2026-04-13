@@ -13,6 +13,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceLine,
 } from "recharts";
 
 interface Props {
@@ -326,7 +327,7 @@ export default function OrderDashboard({ brand, season }: Props) {
       });
 
       // 7일 간격으로 누적
-      const points: { elapsed: number; rate: number }[] = [];
+      const points: { elapsed: number; rate: number; cumValue: number }[] = [];
       const cumStyles = new Set<string>();
       let cumVal = 0;
 
@@ -339,7 +340,7 @@ export default function OrderDashboard({ brand, season }: Props) {
           }
         }
         const numerator = metric === "styles" ? cumStyles.size : cumVal;
-        points.push({ elapsed: d, rate: (numerator / denom) * 100 });
+        points.push({ elapsed: d, rate: (numerator / denom) * 100, cumValue: numerator });
       }
       return points;
     };
@@ -356,6 +357,8 @@ export default function OrderDashboard({ brand, season }: Props) {
         label,
         당해: Math.round(cp.rate * 10) / 10,
         전년: prevMatch ? Math.round(prevMatch.rate * 10) / 10 : 0,
+        currCum: Math.round(cp.cumValue * 100) / 100,
+        prevCum: prevMatch ? Math.round(prevMatch.cumValue * 100) / 100 : 0,
       };
     });
 
@@ -505,17 +508,55 @@ export default function OrderDashboard({ brand, season }: Props) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
             <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={45} domain={[0, 110]} tickFormatter={(v: number) => `${v}%`} />
+            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={45} domain={[0, 100]} tickFormatter={(v: number) => `${v}%`} ticks={[0, 20, 40, 60, 80, 100]} />
             <Tooltip
-              contentStyle={{
-                background: "#0f172a",
-                border: "none",
-                borderRadius: 12,
-                fontSize: 12,
-                color: "#e2e8f0",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+              content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null;
+                const row = payload[0]?.payload;
+                if (!row) return null;
+                const metricUnit = progressMetric === "styles" ? "STY" : progressMetric === "qty" ? "PCS" : "억";
+                const currVal = progressMetric === "amt"
+                  ? `${Number(row.currCum).toFixed(1)}${metricUnit}`
+                  : `${Math.round(row.currCum).toLocaleString()}${metricUnit}`;
+                const prevVal = progressMetric === "amt"
+                  ? `${Number(row.prevCum).toFixed(1)}${metricUnit}`
+                  : `${Math.round(row.prevCum).toLocaleString()}${metricUnit}`;
+                return (
+                  <div style={{
+                    background: "#0f172a",
+                    borderRadius: 12,
+                    padding: "14px 18px",
+                    minWidth: 200,
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+                  }}>
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, fontWeight: 600 }}>
+                      📅 {label}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 4, background: "#4f46e5" }} />
+                      <span style={{ fontSize: 12, color: "#a5b4fc", fontWeight: 600, width: 36 }}>{season}</span>
+                      <span style={{ fontSize: 14, color: "#fff", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                        {currVal}
+                      </span>
+                      <span style={{ fontSize: 13, color: "#818cf8", fontWeight: 700, marginLeft: "auto" }}>
+                        {row.당해}%
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 4, background: "#64748b", border: "1px dashed #94a3b8" }} />
+                      <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 600, width: 36 }}>{prevSeason}</span>
+                      <span style={{ fontSize: 14, color: "#cbd5e1", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                        {prevVal}
+                      </span>
+                      <span style={{ fontSize: 13, color: "#94a3b8", fontWeight: 700, marginLeft: "auto" }}>
+                        {row.전년}%
+                      </span>
+                    </div>
+                  </div>
+                );
               }}
             />
+            <ReferenceLine y={100} stroke="#e2e8f0" strokeDasharray="6 3" label={{ value: "100%", position: "right", fontSize: 10, fill: "#94a3b8" }} />
             <Area type="monotone" dataKey="전년" stroke="#cbd5e1" strokeWidth={2} fill="transparent" strokeDasharray="5 5" dot={false} />
             <Area type="monotone" dataKey="당해" stroke="#4f46e5" strokeWidth={2.5} fill="url(#gradCurr)" dot={{ fill: "#4f46e5", r: 3, strokeWidth: 0 }} activeDot={{ r: 6, stroke: "#4f46e5", strokeWidth: 2, fill: "#fff" }} />
           </AreaChart>
