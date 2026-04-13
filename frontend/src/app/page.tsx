@@ -6,12 +6,36 @@ import OrderDashboard from "@/views/OrderDashboard";
 import DeliveryMgmt from "@/views/DeliveryMgmt";
 import CostOverview from "@/views/CostOverview";
 import ClaimDashboard from "@/views/ClaimDashboard";
+import PlaceholderPage from "@/views/PlaceholderPage";
+
+// 페이지 래퍼 (placeholder용)
+function makePlaceholder(title: string) {
+  return function PH(props: { brand: string; season: string }) {
+    return <PlaceholderPage {...props} title={title} />;
+  };
+}
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType<{ brand: string; season: string }>> = {
+  // 생산
   order_dashboard: OrderDashboard,
   delivery_mgmt: DeliveryMgmt,
+  supplier_input: makePlaceholder("데이터 입력"),
+  report_gen: makePlaceholder("리포트"),
+  // 원가
   cost_overview: CostOverview,
+  cost_breakdown: makePlaceholder("원가 구성"),
+  markup_analysis: makePlaceholder("마크업 분석"),
+  season_compare: makePlaceholder("시즌 비교"),
+  // 품질
   claim_dashboard: ClaimDashboard,
+  defect_analysis: makePlaceholder("불량 분석"),
+  qc_results: makePlaceholder("검사 결과"),
+  voc_analysis: makePlaceholder("매장 VOC"),
+  // 협력사
+  scorecard: makePlaceholder("스코어카드"),
+  ranking: makePlaceholder("랭킹"),
+  detail_panel: makePlaceholder("상세 분석"),
+  evaluation: makePlaceholder("평가 입력"),
 };
 
 export default function Home() {
