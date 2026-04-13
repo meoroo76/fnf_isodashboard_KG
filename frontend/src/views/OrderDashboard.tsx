@@ -811,7 +811,7 @@ export default function OrderDashboard({ brand, season }: Props) {
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <div className="font-medium text-slate-800 text-[11px]">{row.prdt_cd}</div>
+                          <div className="font-medium text-slate-800 text-[11px]">{row.prdt_cd.replace(/^[A-Z]\d{2}[A-Z]/, "")}</div>
                           <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{row.prdt_nm}</div>
                         </td>
                         <td className="px-3 py-2">
