@@ -5,10 +5,13 @@ import Sidebar from "@/components/Sidebar";
 import OrderDashboard from "@/views/OrderDashboard";
 import DeliveryMgmt from "@/views/DeliveryMgmt";
 import CostOverview from "@/views/CostOverview";
+import CostBreakdown from "@/views/CostBreakdown";
 import ClaimDashboard from "@/views/ClaimDashboard";
+import DefectAnalysis from "@/views/DefectAnalysis";
+import VocAnalysis from "@/views/VocAnalysis";
+import SupplierScorecard from "@/views/SupplierScorecard";
 import PlaceholderPage from "@/views/PlaceholderPage";
 
-// 페이지 래퍼 (placeholder용)
 function makePlaceholder(title: string) {
   return function PH(props: { brand: string; season: string }) {
     return <PlaceholderPage {...props} title={title} />;
@@ -23,16 +26,16 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<{ brand: string; seaso
   report_gen: makePlaceholder("리포트"),
   // 원가
   cost_overview: CostOverview,
-  cost_breakdown: makePlaceholder("원가 구성"),
+  cost_breakdown: CostBreakdown,
   markup_analysis: makePlaceholder("마크업 분석"),
   season_compare: makePlaceholder("시즌 비교"),
   // 품질
   claim_dashboard: ClaimDashboard,
-  defect_analysis: makePlaceholder("불량 분석"),
+  defect_analysis: DefectAnalysis,
   qc_results: makePlaceholder("검사 결과"),
-  voc_analysis: makePlaceholder("매장 VOC"),
+  voc_analysis: VocAnalysis,
   // 협력사
-  scorecard: makePlaceholder("스코어카드"),
+  scorecard: SupplierScorecard,
   ranking: makePlaceholder("랭킹"),
   detail_panel: makePlaceholder("상세 분석"),
   evaluation: makePlaceholder("평가 입력"),
