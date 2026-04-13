@@ -270,67 +270,97 @@ export default function OrderDashboard({ brand, season }: Props) {
     return rows;
   }, [currData, prevData]);
 
-  // 입고 진도율 차트 (시즌 기준 경과일 → 누적 입고율 %)
+  // 입고 진도율 메트릭 선택 (기본: 스타일수)
+  const [progressMetric, setProgressMetric] = useState<"styles" | "qty" | "amt">("styles");
+
+  // 시즌별 시작/종료일 계산 (각 시즌마다 자기 기준)
+  const getSeasonDates = (sesn: string) => {
+    const isFW = sesn.toUpperCase().endsWith("F");
+    const y = 2000 + parseInt(sesn.slice(0, 2));
+    const start = isFW ? new Date(y, 6, 1) : new Date(y - 1, 11, 1);
+    const end = isFW ? new Date(y, 10, 30) : new Date(y, 4, 31);
+    return { start, end, maxElapsed: Math.round((end.getTime() - start.getTime()) / 86400000) };
+  };
+
+  // 입고 진도율 차트 데이터 (당해/전년 각각 자기 시즌 시작일 기준 경과일로 계산)
   const weeklyTrend = useMemo(() => {
     if (!currData.length) return [];
 
-    // 시즌 시작/종료일 계산
-    const isFW = season.toUpperCase().endsWith("F");
-    const seasonYear = 2000 + parseInt(season.slice(0, 2));
-    const startDate = isFW
-      ? new Date(seasonYear, 6, 1)    // FW: 당해 7/1
-      : new Date(seasonYear - 1, 11, 1); // SS: 전년 12/1
-    const endDate = isFW
-      ? new Date(seasonYear, 10, 30)   // FW: 당해 11/30
-      : new Date(seasonYear, 4, 31);    // SS: 당해 5/31
+    const currDates = getSeasonDates(season);
+    const prevDates = getSeasonDates(prevSeason);
 
-    const maxElapsed = Math.round((endDate.getTime() - startDate.getTime()) / 86400000);
-
-    // 경과일별 입고수량 누적 → 진도율 계산
-    const calcProgress = (data: OrderInbound[], totalOrdQty: number) => {
+    const calcProgress = (
+      data: OrderInbound[],
+      seasonDates: { start: Date; maxElapsed: number },
+      metric: "styles" | "qty" | "amt",
+    ) => {
+      const { start, maxElapsed } = seasonDates;
       const stored = data.filter((r) => (r.STOR_QTY || 0) > 0 && r.INDC_DT_CNFM);
-      const dayMap = new Map<number, number>();
+
+      // 분모 계산
+      let denom: number;
+      if (metric === "styles") {
+        denom = Math.max(new Set(data.map((r) => r.PRDT_CD)).size, 1);
+      } else if (metric === "qty") {
+        denom = Math.max(data.reduce((s, r) => s + (r.ORD_QTY || 0), 0), 1);
+      } else {
+        denom = Math.max(data.reduce((s, r) => s + (r.ORD_TAG_AMT || 0), 0) / 1e8, 0.01);
+      }
+
+      // 경과일별 맵 (스타일은 Set, 수량/금액은 number)
+      const dayStyles = new Map<number, Set<string>>();
+      const dayValues = new Map<number, number>();
 
       stored.forEach((r) => {
         const dt = new Date(r.INDC_DT_CNFM as string);
-        let elapsed = Math.round((dt.getTime() - startDate.getTime()) / 86400000);
+        let elapsed = Math.round((dt.getTime() - start.getTime()) / 86400000);
         elapsed = Math.max(0, Math.min(elapsed, maxElapsed));
-        dayMap.set(elapsed, (dayMap.get(elapsed) || 0) + (r.STOR_QTY || 0));
+
+        if (metric === "styles") {
+          if (!dayStyles.has(elapsed)) dayStyles.set(elapsed, new Set());
+          dayStyles.get(elapsed)!.add(r.PRDT_CD);
+        } else {
+          const val = metric === "qty" ? (r.STOR_QTY || 0) : (r.STOR_TAG_AMT || 0) / 1e8;
+          dayValues.set(elapsed, (dayValues.get(elapsed) || 0) + val);
+        }
       });
 
-      // 15일 간격으로 구간 집계 → 누적 진도율
-      const points: { label: string; elapsed: number; rate: number }[] = [];
-      let cumQty = 0;
-      const denom = Math.max(totalOrdQty, 1);
+      // 7일 간격으로 누적
+      const points: { elapsed: number; rate: number }[] = [];
+      const cumStyles = new Set<string>();
+      let cumVal = 0;
 
       for (let d = 0; d <= maxElapsed; d += 7) {
-        // 이 구간까지의 수량 합산
-        for (let dd = (d === 0 ? 0 : d - 6); dd <= d; dd++) {
-          cumQty += dayMap.get(dd) || 0;
+        for (let dd = Math.max(0, d - 6); dd <= d; dd++) {
+          if (metric === "styles") {
+            dayStyles.get(dd)?.forEach((s) => cumStyles.add(s));
+          } else {
+            cumVal += dayValues.get(dd) || 0;
+          }
         }
-        const refDate = new Date(startDate.getTime() + d * 86400000);
-        const label = `${refDate.getMonth() + 1}/${refDate.getDate()}`;
-        points.push({ label, elapsed: d, rate: (cumQty / denom) * 100 });
+        const numerator = metric === "styles" ? cumStyles.size : cumVal;
+        points.push({ elapsed: d, rate: (numerator / denom) * 100 });
       }
-
       return points;
     };
 
-    const currOrdQty = currData.reduce((s, r) => s + (r.ORD_QTY || 0), 0);
-    const prevOrdQty = prevData.reduce((s, r) => s + (r.ORD_QTY || 0), 0);
+    const currPoints = calcProgress(currData, currDates, progressMetric);
+    const prevPoints = calcProgress(prevData, prevDates, progressMetric);
 
-    const currPoints = calcProgress(currData, currOrdQty);
-    const prevPoints = calcProgress(prevData, prevOrdQty);
-
-    // 당해/전년을 elapsed 기준으로 병합
-    const merged = currPoints.map((cp, i) => ({
-      label: cp.label,
-      당해: Math.round(cp.rate * 10) / 10,
-      전년: prevPoints[i] ? Math.round(prevPoints[i].rate * 10) / 10 : 0,
-    }));
+    // 당해 시즌 날짜 라벨 + 전년은 동일 경과일로 매칭
+    const merged = currPoints.map((cp) => {
+      const refDate = new Date(currDates.start.getTime() + cp.elapsed * 86400000);
+      const label = `${refDate.getMonth() + 1}/${refDate.getDate()}`;
+      const prevMatch = prevPoints.find((pp) => pp.elapsed === cp.elapsed);
+      return {
+        label,
+        당해: Math.round(cp.rate * 10) / 10,
+        전년: prevMatch ? Math.round(prevMatch.rate * 10) / 10 : 0,
+      };
+    });
 
     return merged;
-  }, [currData, prevData, season]);
+  }, [currData, prevData, season, prevSeason, progressMetric]);
 
   if (loading) {
     return (
@@ -434,13 +464,34 @@ export default function OrderDashboard({ brand, season }: Props) {
       {/* 주차별 입고 추이 (전체폭) */}
       <div className="bg-white rounded-2xl border border-slate-100 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-sm font-bold text-slate-700">📈 입고 진도율 (수량 기준, 전년비)</h3>
+          <div className="flex items-center gap-4">
+            <h3 className="text-sm font-bold text-slate-700">📈 입고 진도율 (전년비)</h3>
+            <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
+              {([
+                { key: "styles" as const, label: "스타일수" },
+                { key: "qty" as const, label: "수량" },
+                { key: "amt" as const, label: "금액" },
+              ]).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setProgressMetric(opt.key)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    progressMetric === opt.key
+                      ? "bg-white text-indigo-600 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex items-center gap-6 text-xs text-slate-400">
             <span className="flex items-center gap-1.5">
               <span className="w-4 h-0.5 bg-indigo-500 rounded" /> {season}
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-4 h-0.5 bg-slate-300 rounded border-dashed" /> {prevSeason}
+              <span className="w-4 h-0.5 bg-slate-300 rounded" /> {prevSeason}
             </span>
           </div>
         </div>
