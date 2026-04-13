@@ -16,6 +16,15 @@ import {
   ReferenceLine,
 } from "recharts";
 
+/** ISO 8601 week number */
+function getISOWeek(d: Date): number {
+  const tmp = new Date(d.getTime());
+  tmp.setHours(0, 0, 0, 0);
+  tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
+  const week1 = new Date(tmp.getFullYear(), 0, 4);
+  return 1 + Math.round(((tmp.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+}
+
 interface Props {
   brand: string;
   season: string;
@@ -273,6 +282,87 @@ export default function OrderDashboard({ brand, season }: Props) {
 
   // 입고 진도율 메트릭 선택 (기본: 스타일수)
   const [progressMetric, setProgressMetric] = useState<"styles" | "qty" | "amt">("styles");
+
+  // 주차별 입고 현황 — 주차 선택
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
+
+  // 주차 목록 + 현재 주차 자동 선택
+  const weekOptions = useMemo(() => {
+    if (!currData.length) return [];
+    const weekSet = new Map<number, { year: number; startDate: string; endDate: string }>();
+    currData.forEach((r) => {
+      if ((r.STOR_QTY || 0) <= 0 || !r.INDC_DT_CNFM) return;
+      const dt = new Date(r.INDC_DT_CNFM as string);
+      const wk = getISOWeek(dt);
+      if (!weekSet.has(wk)) {
+        // 해당 주의 월~일 범위 계산
+        const monday = new Date(dt);
+        monday.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        weekSet.set(wk, {
+          year: dt.getFullYear(),
+          startDate: `${monday.getMonth() + 1}/${monday.getDate()}`,
+          endDate: `${sunday.getMonth() + 1}/${sunday.getDate()}`,
+        });
+      }
+    });
+    return [...weekSet.entries()]
+      .sort(([a], [b]) => b - a) // 최신 주차 먼저
+      .map(([wk, info]) => ({
+        week: wk,
+        label: `${wk}W (${info.startDate}~${info.endDate})`,
+      }));
+  }, [currData]);
+
+  // 현재 주차 자동 선택
+  useMemo(() => {
+    if (weekOptions.length > 0 && selectedWeek === null) {
+      const now = new Date();
+      const currWk = getISOWeek(now);
+      const match = weekOptions.find((w) => w.week === currWk);
+      setSelectedWeek(match ? currWk : weekOptions[0].week);
+    }
+  }, [weekOptions, selectedWeek]);
+
+  // 선택된 주차의 입고 데이터 (스타일 × 칼라 단위 집계)
+  const weeklyInboundList = useMemo(() => {
+    if (!selectedWeek || !currData.length) return [];
+    const rows = currData.filter((r) => {
+      if ((r.STOR_QTY || 0) <= 0 || !r.INDC_DT_CNFM) return false;
+      const dt = new Date(r.INDC_DT_CNFM as string);
+      return getISOWeek(dt) === selectedWeek;
+    });
+
+    // 스타일×칼라 단위 집계
+    const map = new Map<string, {
+      prdt_cd: string; prdt_nm: string; color_cd: string;
+      stor_qty: number; indc_dt: string; po_no: string;
+    }>();
+    rows.forEach((r) => {
+      const key = `${r.PRDT_CD}_${String(r.COLOR_CD || "")}`;
+      const cur = map.get(key);
+      if (!cur) {
+        map.set(key, {
+          prdt_cd: r.PRDT_CD,
+          prdt_nm: r.PRDT_NM || "-",
+          color_cd: String(r.COLOR_CD || "-"),
+          stor_qty: r.STOR_QTY || 0,
+          indc_dt: String(r.INDC_DT_CNFM || ""),
+          po_no: r.PO_NO || "-",
+        });
+      } else {
+        cur.stor_qty += r.STOR_QTY || 0;
+      }
+    });
+
+    return [...map.values()]
+      .sort((a, b) => a.indc_dt.localeCompare(b.indc_dt))
+      .map((r) => ({
+        ...r,
+        order_no: r.po_no.slice(-1) === "1" ? "이니셜" : `리오더(${r.po_no.slice(-1)}차)`,
+      }));
+  }, [currData, selectedWeek]);
 
   // 시즌별 시작/종료일 계산 (각 시즌마다 자기 기준)
   const getSeasonDates = (sesn: string) => {
@@ -559,6 +649,102 @@ export default function OrderDashboard({ brand, season }: Props) {
             <Area type="monotone" dataKey="당해" stroke="#4f46e5" strokeWidth={2.5} fill="url(#gradCurr)" dot={{ fill: "#4f46e5", r: 3, strokeWidth: 0 }} activeDot={{ r: 6, stroke: "#4f46e5", strokeWidth: 2, fill: "#fff" }} />
           </AreaChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* 주차별 입고 현황 */}
+      <div>
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-1.5 h-7 rounded-full bg-emerald-500" />
+          <h2 className="text-lg font-bold text-slate-800">주차별 입고 현황</h2>
+          <select
+            value={selectedWeek || ""}
+            onChange={(e) => setSelectedWeek(Number(e.target.value))}
+            className="ml-auto px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:border-indigo-400"
+          >
+            {weekOptions.map((opt) => (
+              <option key={opt.week} value={opt.week}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          {/* 좌측: 입고 실적 */}
+          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+            <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-700">📦 입고 실적 ({selectedWeek}W)</h3>
+              <span className="text-xs text-slate-400">{weeklyInboundList.length}건</span>
+            </div>
+            <div className="max-h-[400px] overflow-y-auto">
+              <table className="w-full text-[12px]">
+                <thead className="sticky top-0 bg-slate-50 z-10">
+                  <tr>
+                    <th className="text-left px-4 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">이미지</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">스타일</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">칼라</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고수량</th>
+                    <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고일</th>
+                    <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고차수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeklyInboundList.length === 0 ? (
+                    <tr><td colSpan={6} className="text-center py-10 text-slate-400">해당 주차 입고 데이터 없음</td></tr>
+                  ) : (
+                    weeklyInboundList.map((row, idx) => (
+                      <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50">
+                        <td className="px-4 py-2">
+                          <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-[9px]">
+                            IMG
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="font-medium text-slate-800 text-[11px]">{row.prdt_cd}</div>
+                          <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{row.prdt_nm}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-[11px] text-slate-600 font-mono">
+                            {row.color_cd}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums font-medium text-slate-800">
+                          {row.stor_qty.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2 text-center text-slate-600 text-[11px]">
+                          {row.indc_dt.slice(5)}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium ${
+                            row.order_no === "이니셜"
+                              ? "bg-blue-50 text-blue-600"
+                              : "bg-amber-50 text-amber-600"
+                          }`}>
+                            {row.order_no}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 우측: 입고 예정 (플레이스홀더) */}
+          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+            <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-700">📅 입고 예정 (금주)</h3>
+            </div>
+            <div className="flex items-center justify-center h-[400px]">
+              <div className="text-center">
+                <div className="text-4xl mb-3">📋</div>
+                <p className="text-sm text-slate-400">엑셀 시트 연동 예정</p>
+                <p className="text-xs text-slate-300 mt-1">입고 예정 스타일 리스트가 표시됩니다</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Data Table */}
