@@ -737,7 +737,7 @@ export default function OrderDashboard({ brand, season }: Props) {
           <select
             value={selectedWeek || ""}
             onChange={(e) => setSelectedWeek(Number(e.target.value))}
-            className="ml-auto px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:border-indigo-400"
+            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:border-indigo-400"
           >
             {weekOptions.map((opt) => (
               <option key={opt.week} value={opt.week}>
