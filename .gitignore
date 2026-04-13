@@ -1,0 +1,9 @@
+src/output/
+src/download/
+.venv/
+__pycache__/
+*.pyc
+*.tmp.*
+.claude/
+.bkit/
+docs/
