@@ -3,9 +3,15 @@
 import { useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import OrderDashboard from "@/views/OrderDashboard";
+import DeliveryMgmt from "@/views/DeliveryMgmt";
+import CostOverview from "@/views/CostOverview";
+import ClaimDashboard from "@/views/ClaimDashboard";
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType<{ brand: string; season: string }>> = {
   order_dashboard: OrderDashboard,
+  delivery_mgmt: DeliveryMgmt,
+  cost_overview: CostOverview,
+  claim_dashboard: ClaimDashboard,
 };
 
 export default function Home() {
