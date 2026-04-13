@@ -13,10 +13,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
-  Bar,
-  Legend,
-  Cell,
 } from "recharts";
 
 interface Props {
@@ -404,72 +400,44 @@ export default function OrderDashboard({ brand, season }: Props) {
         ))}
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-2 gap-4">
-        {/* 입고 추이 */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-slate-700">📈 주차별 입고 추이</h3>
-            <div className="flex items-center gap-4 text-xs text-slate-400">
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-0.5 bg-indigo-500 rounded" /> {season}
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-0.5 bg-slate-300 rounded" /> {prevSeason}
-              </span>
-            </div>
+      {/* 주차별 입고 추이 (전체폭) */}
+      <div className="bg-white rounded-2xl border border-slate-100 p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-sm font-bold text-slate-700">📈 주차별 입고 추이</h3>
+          <div className="flex items-center gap-6 text-xs text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <span className="w-4 h-0.5 bg-indigo-500 rounded" /> {season}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-4 h-0.5 bg-slate-300 rounded border-dashed" /> {prevSeason}
+            </span>
           </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={weeklyTrend}>
-              <defs>
-                <linearGradient id="gradCurr" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#4f46e5" stopOpacity={0.2} />
-                  <stop offset="100%" stopColor="#4f46e5" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="week" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={50} />
-              <Tooltip
-                contentStyle={{
-                  background: "#0f172a",
-                  border: "none",
-                  borderRadius: 12,
-                  fontSize: 12,
-                  color: "#e2e8f0",
-                }}
-              />
-              <Area type="monotone" dataKey="전년" stroke="#cbd5e1" strokeWidth={2} fill="transparent" strokeDasharray="4 4" dot={false} />
-              <Area type="monotone" dataKey="당해" stroke="#4f46e5" strokeWidth={2.5} fill="url(#gradCurr)" dot={{ fill: "#4f46e5", r: 3 }} activeDot={{ r: 5 }} />
-            </AreaChart>
-          </ResponsiveContainer>
         </div>
-
-        {/* 카테고리별 발주 */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-5">
-          <h3 className="text-sm font-bold text-slate-700 mb-4">📊 카테고리별 발주 비교</h3>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={categoryData.filter((r) => !r._isTotal)} barGap={2}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="category" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={60}
-                tickFormatter={(v: number) => formatNumber(v, "억")} />
-              <Tooltip
-                contentStyle={{
-                  background: "#0f172a",
-                  border: "none",
-                  borderRadius: 12,
-                  fontSize: 12,
-                  color: "#e2e8f0",
-                }}
-                formatter={(value) => [formatNumber(Number(value), "억") + "억원", ""]}
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="prevOrdAmt" name={prevSeason} fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="currOrdAmt" name={season} fill="#4f46e5" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ResponsiveContainer width="100%" height={340}>
+          <AreaChart data={weeklyTrend}>
+            <defs>
+              <linearGradient id="gradCurr" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#4f46e5" stopOpacity={0.15} />
+                <stop offset="100%" stopColor="#4f46e5" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+            <XAxis dataKey="week" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={55} />
+            <Tooltip
+              contentStyle={{
+                background: "#0f172a",
+                border: "none",
+                borderRadius: 12,
+                fontSize: 12,
+                color: "#e2e8f0",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+              }}
+            />
+            <Area type="monotone" dataKey="전년" stroke="#cbd5e1" strokeWidth={2} fill="transparent" strokeDasharray="5 5" dot={false} />
+            <Area type="monotone" dataKey="당해" stroke="#4f46e5" strokeWidth={2.5} fill="url(#gradCurr)" dot={{ fill: "#4f46e5", r: 3, strokeWidth: 0 }} activeDot={{ r: 6, stroke: "#4f46e5", strokeWidth: 2, fill: "#fff" }} />
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
 
       {/* Data Table */}
