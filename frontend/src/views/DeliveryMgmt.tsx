@@ -52,7 +52,7 @@ export default function DeliveryMgmt({ brand, season }: Props) {
     // D-7 긴급 (납기일 7일 이내)
     const urgent = pending.filter((r) => {
       if (!r.STOR_SCHD_DT) return false;
-      const schd = new Date(r.STOR_SCHD_DT);
+      const schd = new Date(String(r.STOR_SCHD_DT));
       const diff = (schd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
       return diff >= 0 && diff <= 7;
     });
@@ -60,7 +60,7 @@ export default function DeliveryMgmt({ brand, season }: Props) {
     // 납기 지연 (납기일 경과)
     const delayed = pending.filter((r) => {
       if (!r.STOR_SCHD_DT) return false;
-      const schd = new Date(r.STOR_SCHD_DT);
+      const schd = new Date(String(r.STOR_SCHD_DT));
       return schd < today;
     });
 
@@ -154,7 +154,7 @@ export default function DeliveryMgmt({ brand, season }: Props) {
     return data
       .filter((r) => (r.STOR_QTY || 0) === 0)
       .map((r) => {
-        const schd = r.STOR_SCHD_DT ? new Date(r.STOR_SCHD_DT) : null;
+        const schd = r.STOR_SCHD_DT ? new Date(String(r.STOR_SCHD_DT)) : null;
         const dDay = schd ? Math.ceil((schd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
         return {
           prdt_cd: r.PRDT_CD,

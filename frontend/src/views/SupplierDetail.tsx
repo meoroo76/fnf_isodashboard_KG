@@ -80,12 +80,12 @@ export default function SupplierDetail({ brand, season }: Props) {
   const deliveryTrend = useMemo(() => {
     const map = new Map<string, { onTime: number; total: number }>();
     supOrders.forEach((o) => {
-      const dt = o.STOR_DT || o.STOR_SCHD_DT;
+      const dt = String(o.STOR_DT || o.INDC_DT_CNFM || "");
       if (!dt) return;
       const month = dt.slice(0, 7);
       const cur = map.get(month) || { onTime: 0, total: 0 };
       cur.total += 1;
-      if (o.STOR_DT && o.STOR_SCHD_DT && o.STOR_DT <= o.STOR_SCHD_DT) cur.onTime += 1;
+      if ((o.STOR_QTY || 0) > 0) cur.onTime += 1;
       map.set(month, cur);
     });
     return [...map.entries()]
