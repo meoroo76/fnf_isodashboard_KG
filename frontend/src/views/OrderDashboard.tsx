@@ -78,51 +78,72 @@ export default function OrderDashboard({ brand, season }: Props) {
     const currStorAmt = currData.reduce((s, r) => s + (r.STOR_TAG_AMT || 0), 0);
     const prevStorAmt = prevData.reduce((s, r) => s + (r.STOR_TAG_AMT || 0), 0);
 
+    // 입고 스타일수 (STOR_QTY > 0인 고유 PRDT_CD)
+    const currStorStyles = new Set(currData.filter((r) => (r.STOR_QTY || 0) > 0).map((r) => r.PRDT_CD)).size;
+    const prevStorStyles = new Set(prevData.filter((r) => (r.STOR_QTY || 0) > 0).map((r) => r.PRDT_CD)).size;
+
+    // 진행률 계산
+    const styleProgress = currStyles > 0 ? (currStorStyles / currStyles) * 100 : 0;
+    const prevStyleProgress = prevStyles > 0 ? (prevStorStyles / prevStyles) * 100 : 0;
+    const qtyProgress = currOrdQty > 0 ? (currStorQty / currOrdQty) * 100 : 0;
+    const prevQtyProgress = prevOrdQty > 0 ? (prevStorQty / prevOrdQty) * 100 : 0;
+    const amtProgress = currOrdAmt > 0 ? (currStorAmt / currOrdAmt) * 100 : 0;
+    const prevAmtProgress = prevOrdAmt > 0 ? (prevStorAmt / prevOrdAmt) * 100 : 0;
+
     return [
       {
         label: "발주액",
-        value: formatNumber(currOrdAmt, "백만"),
-        unit: "백만",
+        value: formatNumber(currOrdAmt, "억"),
+        unit: "억원",
         icon: "📦",
         delta: calcYoY(currOrdAmt, prevOrdAmt),
-        prevValue: `전년 ${formatNumber(prevOrdAmt, "백만")}`,
+        prevValue: `전년 ${formatNumber(prevOrdAmt, "억")}억`,
         accent: "#4f46e5",
       },
       {
         label: "발주수량",
         value: currOrdQty.toLocaleString(),
-        unit: "수량",
+        unit: "PCS",
         icon: "📊",
         delta: calcYoY(currOrdQty, prevOrdQty),
-        prevValue: `전년 ${prevOrdQty.toLocaleString()}`,
+        prevValue: `전년 ${prevOrdQty.toLocaleString()} PCS`,
         accent: "#7c3aed",
       },
       {
         label: "스타일수",
         value: currStyles.toLocaleString(),
-        unit: "건",
+        unit: "STY",
         icon: "👗",
         delta: calcYoY(currStyles, prevStyles),
-        prevValue: `전년 ${prevStyles}`,
+        prevValue: `전년 ${prevStyles} STY`,
         accent: "#2563eb",
       },
       {
-        label: "입고율",
-        value: storRate.toFixed(1),
+        label: "스타일 입고율",
+        value: styleProgress.toFixed(1),
         unit: "%",
         icon: "🚢",
-        delta: storRate - prevStorRate,
-        prevValue: `전년 ${prevStorRate.toFixed(1)}%`,
+        delta: styleProgress - prevStyleProgress,
+        prevValue: `${currStorStyles}/${currStyles} STY · 전년 ${prevStyleProgress.toFixed(1)}%`,
         accent: "#059669",
       },
       {
-        label: "입고액",
-        value: formatNumber(currStorAmt, "백만"),
-        unit: "백만",
+        label: "수량 입고율",
+        value: qtyProgress.toFixed(1),
+        unit: "%",
         icon: "📥",
-        delta: calcYoY(currStorAmt, prevStorAmt),
-        prevValue: `전년 ${formatNumber(prevStorAmt, "백만")}`,
+        delta: qtyProgress - prevQtyProgress,
+        prevValue: `${currStorQty.toLocaleString()}/${currOrdQty.toLocaleString()} PCS · 전년 ${prevQtyProgress.toFixed(1)}%`,
         accent: "#0891b2",
+      },
+      {
+        label: "금액 입고율",
+        value: amtProgress.toFixed(1),
+        unit: "%",
+        icon: "💰",
+        delta: amtProgress - prevAmtProgress,
+        prevValue: `${formatNumber(currStorAmt, "억")}/${formatNumber(currOrdAmt, "억")}억 · 전년 ${prevAmtProgress.toFixed(1)}%`,
+        accent: "#d97706",
       },
     ];
   }, [currData, prevData]);
@@ -272,8 +293,8 @@ export default function OrderDashboard({ brand, season }: Props) {
       format: (v: unknown) => { const n = Number(v); return n > 0 ? `+${n}` : String(n); },
       colorCode: (v: unknown) => growthColor(v),
     },
-    { key: "currOrdAmt", label: season, align: "right" as const, format: (v: unknown) => formatNumber(Number(v), "백만") },
-    { key: "prevOrdAmt", label: prevSeason, align: "right" as const, format: (v: unknown) => formatNumber(Number(v), "백만") },
+    { key: "currOrdAmt", label: season, align: "right" as const, format: (v: unknown) => formatNumber(Number(v), "억") },
+    { key: "prevOrdAmt", label: prevSeason, align: "right" as const, format: (v: unknown) => formatNumber(Number(v), "억") },
     {
       key: "ordAmtGrowth",
       label: "성장률",
@@ -307,7 +328,7 @@ export default function OrderDashboard({ brand, season }: Props) {
   const columnGroups = [
     { label: "카테고리", colSpan: 1 },
     { label: "스타일수", colSpan: 3, color: "#f0f9ff" },
-    { label: "발주금액 (백만)", colSpan: 3, color: "#faf5ff" },
+    { label: "발주금액 (억원)", colSpan: 3, color: "#faf5ff" },
     { label: "입고수량", colSpan: 3, color: "#f0fdf4" },
     { label: "", colSpan: 1, color: "#fffbeb" },
   ];
@@ -324,7 +345,7 @@ export default function OrderDashboard({ brand, season }: Props) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-6 gap-4">
         {kpis.map((kpi) => (
           <KpiCard
             key={kpi.label}
@@ -388,7 +409,7 @@ export default function OrderDashboard({ brand, season }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="category" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={60}
-                tickFormatter={(v: number) => formatNumber(v, "백만")} />
+                tickFormatter={(v: number) => formatNumber(v, "억")} />
               <Tooltip
                 contentStyle={{
                   background: "#0f172a",
@@ -397,7 +418,7 @@ export default function OrderDashboard({ brand, season }: Props) {
                   fontSize: 12,
                   color: "#e2e8f0",
                 }}
-                formatter={(value) => [formatNumber(Number(value), "백만") + " 백만", ""]}
+                formatter={(value) => [formatNumber(Number(value), "억") + "억원", ""]}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="prevOrdAmt" name={prevSeason} fill="#cbd5e1" radius={[4, 4, 0, 0]} />
