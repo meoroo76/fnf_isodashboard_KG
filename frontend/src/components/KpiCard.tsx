@@ -98,9 +98,9 @@ export default function KpiCard({
                 className={cn(
                   "text-[10px] font-bold",
                   sub.delta > 0
-                    ? "text-emerald-600"
-                    : sub.delta < 0
                     ? "text-red-500"
+                    : sub.delta < 0
+                    ? "text-blue-500"
                     : "text-slate-400"
                 )}
               >

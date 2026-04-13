@@ -168,13 +168,13 @@ export default function OrderDashboard({ brand, season }: Props) {
     const amtProgress = currOrdAmt > 0 ? (currStorAmt / currOrdAmt) * 100 : 0;
     const prevAmtProgress = prevOrdAmt > 0 ? (prevStorAmt / prevOrdAmt) * 100 : 0;
 
-    // 판매 데이터 (seasonSale에서 추출)
+    // 판매 데이터 — 동기간 비교 (당해 누적 vs 전년 동기간)
     const currSaleAmt = Number(seasonSale["당해누적판매택가"] || seasonSale["당해누적판매액"] || 0);
-    const prevSaleAmt = Number(seasonSale["전년마감판매택가"] || seasonSale["전년누적판매택가"] || 0);
+    const prevSaleAmt = Number(seasonSale["전년누적판매택가"] || seasonSale["전년기간판매택가"] || 0);
     const currSaleRate = Number(seasonSale["당해판매율"] || 0);
-    const prevSaleRate = Number(seasonSale["전년판매율"] || seasonSale["전년마감판매율"] || 0);
+    const prevSaleRate = Number(seasonSale["전년판매율"] || 0);
     const currSaleQty = Number(seasonSale["당해누적판매수량"] || 0);
-    const prevSaleQty = Number(seasonSale["전년마감판매수량"] || 0);
+    const prevSaleQty = Number(seasonSale["전년누적판매수량"] || seasonSale["전년기간판매수량"] || 0);
 
     return [
       {
@@ -247,7 +247,7 @@ export default function OrderDashboard({ brand, season }: Props) {
         unit: currSaleAmt > 0 ? "억원" : "",
         icon: "💰",
         delta: calcYoY(currSaleAmt, prevSaleAmt),
-        prevValue: prevSaleAmt > 0 ? `전년 ${formatNumber(prevSaleAmt, "억")}억 · ${prevSaleQty.toLocaleString()} PCS` : "전년 데이터 없음",
+        prevValue: prevSaleAmt > 0 ? `전년 동기간 ${formatNumber(prevSaleAmt, "억")}억 · ${prevSaleQty.toLocaleString()} PCS` : "전년 데이터 없음",
         accent: "#d97706",
         sub: {
           label: "판매율",
