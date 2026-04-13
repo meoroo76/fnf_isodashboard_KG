@@ -1,5 +1,6 @@
 src/output/
-src/download/
+src/download/*
+!src/download/kg_cache/
 .venv/
 __pycache__/
 *.pyc
