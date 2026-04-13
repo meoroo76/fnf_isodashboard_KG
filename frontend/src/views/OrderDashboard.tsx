@@ -24,6 +24,14 @@ interface Props {
   season: string;
 }
 
+interface SubMetric {
+  label: string;
+  value: string;
+  unit?: string;
+  delta?: number;
+  detail?: string;
+}
+
 interface KpiData {
   label: string;
   value: string;
@@ -32,7 +40,7 @@ interface KpiData {
   delta: number;
   prevValue: string;
   accent: string;
-  sparkData?: number[];
+  sub?: SubMetric;
 }
 
 export default function OrderDashboard({ brand, season }: Props) {
@@ -78,7 +86,11 @@ export default function OrderDashboard({ brand, season }: Props) {
     const currStorAmt = currData.reduce((s, r) => s + (r.STOR_TAG_AMT || 0), 0);
     const prevStorAmt = prevData.reduce((s, r) => s + (r.STOR_TAG_AMT || 0), 0);
 
-    // 입고 스타일수 (STOR_QTY > 0인 고유 PRDT_CD)
+    // SKU수 (행 수 = 고유 조합)
+    const currSkus = currData.length;
+    const prevSkus = prevData.length;
+
+    // 입고 스타일/SKU 수 (STOR_QTY > 0)
     const currStorStyles = new Set(currData.filter((r) => (r.STOR_QTY || 0) > 0).map((r) => r.PRDT_CD)).size;
     const prevStorStyles = new Set(prevData.filter((r) => (r.STOR_QTY || 0) > 0).map((r) => r.PRDT_CD)).size;
 
@@ -90,6 +102,12 @@ export default function OrderDashboard({ brand, season }: Props) {
     const amtProgress = currOrdAmt > 0 ? (currStorAmt / currOrdAmt) * 100 : 0;
     const prevAmtProgress = prevOrdAmt > 0 ? (prevStorAmt / prevOrdAmt) * 100 : 0;
 
+    // 판매 데이터 (seasonSale에서 추출)
+    const currSaleAmt = Number(seasonSale["당해누적판매금액"] || seasonSale["당해판매금액"] || 0);
+    const prevSaleAmt = Number(seasonSale["전년누적판매금액"] || seasonSale["전년판매금액"] || 0);
+    const currSaleRate = Number(seasonSale["당해판매율"] || 0);
+    const prevSaleRate = Number(seasonSale["전년판매율"] || 0);
+
     return [
       {
         label: "발주액",
@@ -99,6 +117,12 @@ export default function OrderDashboard({ brand, season }: Props) {
         delta: calcYoY(currOrdAmt, prevOrdAmt),
         prevValue: `전년 ${formatNumber(prevOrdAmt, "억")}억`,
         accent: "#4f46e5",
+        sub: {
+          label: "금액 입고율",
+          value: amtProgress.toFixed(1),
+          delta: amtProgress - prevAmtProgress,
+          detail: `입고 ${formatNumber(currStorAmt, "억")}억 / 발주 ${formatNumber(currOrdAmt, "억")}억 · 전년 ${prevAmtProgress.toFixed(1)}%`,
+        },
       },
       {
         label: "발주수량",
@@ -108,6 +132,12 @@ export default function OrderDashboard({ brand, season }: Props) {
         delta: calcYoY(currOrdQty, prevOrdQty),
         prevValue: `전년 ${prevOrdQty.toLocaleString()} PCS`,
         accent: "#7c3aed",
+        sub: {
+          label: "수량 입고율",
+          value: qtyProgress.toFixed(1),
+          delta: qtyProgress - prevQtyProgress,
+          detail: `입고 ${currStorQty.toLocaleString()} / 발주 ${currOrdQty.toLocaleString()} PCS · 전년 ${prevQtyProgress.toFixed(1)}%`,
+        },
       },
       {
         label: "스타일수",
@@ -117,33 +147,46 @@ export default function OrderDashboard({ brand, season }: Props) {
         delta: calcYoY(currStyles, prevStyles),
         prevValue: `전년 ${prevStyles} STY`,
         accent: "#2563eb",
+        sub: {
+          label: "스타일 입고율",
+          value: styleProgress.toFixed(1),
+          delta: styleProgress - prevStyleProgress,
+          detail: `입고 ${currStorStyles} / 발주 ${currStyles} STY · 전년 ${prevStyleProgress.toFixed(1)}%`,
+        },
       },
       {
-        label: "스타일 입고율",
-        value: styleProgress.toFixed(1),
-        unit: "%",
-        icon: "🚢",
-        delta: styleProgress - prevStyleProgress,
-        prevValue: `${currStorStyles}/${currStyles} STY · 전년 ${prevStyleProgress.toFixed(1)}%`,
+        label: "SKU수",
+        value: currSkus.toLocaleString(),
+        unit: "SKU",
+        icon: "🏷️",
+        delta: calcYoY(currSkus, prevSkus),
+        prevValue: `전년 ${prevSkus.toLocaleString()} SKU`,
         accent: "#059669",
+        sub: {
+          label: "SKU 입고율",
+          value: currSkus > 0 ? ((currData.filter((r) => (r.STOR_QTY || 0) > 0).length / currSkus) * 100).toFixed(1) : "0.0",
+          delta: (() => {
+            const curr = currSkus > 0 ? (currData.filter((r) => (r.STOR_QTY || 0) > 0).length / currSkus) * 100 : 0;
+            const prev = prevSkus > 0 ? (prevData.filter((r) => (r.STOR_QTY || 0) > 0).length / prevSkus) * 100 : 0;
+            return curr - prev;
+          })(),
+          detail: `입고 ${currData.filter((r) => (r.STOR_QTY || 0) > 0).length} / 발주 ${currSkus} SKU`,
+        },
       },
       {
-        label: "수량 입고율",
-        value: qtyProgress.toFixed(1),
-        unit: "%",
-        icon: "📥",
-        delta: qtyProgress - prevQtyProgress,
-        prevValue: `${currStorQty.toLocaleString()}/${currOrdQty.toLocaleString()} PCS · 전년 ${prevQtyProgress.toFixed(1)}%`,
-        accent: "#0891b2",
-      },
-      {
-        label: "금액 입고율",
-        value: amtProgress.toFixed(1),
-        unit: "%",
+        label: "판매금액",
+        value: currSaleAmt > 0 ? formatNumber(currSaleAmt, "억") : "-",
+        unit: currSaleAmt > 0 ? "억원" : "",
         icon: "💰",
-        delta: amtProgress - prevAmtProgress,
-        prevValue: `${formatNumber(currStorAmt, "억")}/${formatNumber(currOrdAmt, "억")}억 · 전년 ${prevAmtProgress.toFixed(1)}%`,
+        delta: calcYoY(currSaleAmt, prevSaleAmt),
+        prevValue: prevSaleAmt > 0 ? `전년 ${formatNumber(prevSaleAmt, "억")}억` : "전년 데이터 없음",
         accent: "#d97706",
+        sub: {
+          label: "판매율",
+          value: currSaleRate > 0 ? currSaleRate.toFixed(1) : "0.0",
+          delta: currSaleRate - prevSaleRate,
+          detail: prevSaleRate > 0 ? `전년 판매율 ${prevSaleRate.toFixed(1)}%` : "",
+        },
       },
     ];
   }, [currData, prevData]);
@@ -345,7 +388,7 @@ export default function OrderDashboard({ brand, season }: Props) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-6 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         {kpis.map((kpi) => (
           <KpiCard
             key={kpi.label}
@@ -356,6 +399,7 @@ export default function OrderDashboard({ brand, season }: Props) {
             delta={kpi.delta}
             prevValue={kpi.prevValue}
             accent={kpi.accent}
+            sub={kpi.sub}
           />
         ))}
       </div>
