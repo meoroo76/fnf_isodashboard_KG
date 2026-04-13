@@ -283,6 +283,9 @@ export default function OrderDashboard({ brand, season }: Props) {
   // 입고 진도율 메트릭 선택 (기본: 스타일수)
   const [progressMetric, setProgressMetric] = useState<"styles" | "qty" | "amt">("styles");
 
+  // 주차별 입고 테이블 펼치기
+  const [inboundExpanded, setInboundExpanded] = useState(false);
+
   // 주차별 입고 현황 — 주차 선택
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
 
@@ -671,12 +674,36 @@ export default function OrderDashboard({ brand, season }: Props) {
 
         <div className="grid grid-cols-2 gap-4">
           {/* 좌측: 입고 실적 */}
-          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden flex flex-col">
+            {/* 헤더 */}
             <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-700">📦 입고 실적 ({selectedWeek}W)</h3>
-              <span className="text-xs text-slate-400">{weeklyInboundList.length}건</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-400">{weeklyInboundList.length}건</span>
+                <button
+                  onClick={() => setInboundExpanded(!inboundExpanded)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                >
+                  {inboundExpanded ? "접기 ▲" : "펼치기 ▼"}
+                </button>
+              </div>
             </div>
-            <div className="max-h-[400px] overflow-y-auto">
+
+            {/* 합계 (헤더 바로 아래 고정) */}
+            {weeklyInboundList.length > 0 && (
+              <div className="px-5 py-2.5 bg-slate-800 text-white flex items-center text-[11px] font-bold">
+                <span className="flex-1">합계</span>
+                <span className="px-3">{new Set(weeklyInboundList.map((r) => r.prdt_cd)).size} STY</span>
+                <span className="px-3">{weeklyInboundList.length} SKU</span>
+                <span className="px-3 font-mono tabular-nums">{weeklyInboundList.reduce((s, r) => s + r.stor_qty, 0).toLocaleString()} PCS</span>
+              </div>
+            )}
+
+            {/* 테이블 본문 (높이 조절) */}
+            <div
+              className="overflow-y-auto transition-all duration-300"
+              style={{ maxHeight: inboundExpanded ? "none" : "600px" }}
+            >
               <table className="w-full text-[12px]">
                 <thead className="sticky top-0 bg-slate-50 z-10">
                   <tr>
@@ -727,22 +754,6 @@ export default function OrderDashboard({ brand, season }: Props) {
                     ))
                   )}
                 </tbody>
-                {weeklyInboundList.length > 0 && (
-                  <tfoot className="sticky bottom-0 bg-slate-800 text-white">
-                    <tr>
-                      <td className="px-4 py-2.5 text-[11px] font-bold" colSpan={2}>
-                        합계
-                      </td>
-                      <td className="px-3 py-2.5 text-[11px] font-bold text-center">
-                        {new Set(weeklyInboundList.map((r) => r.prdt_cd)).size} STY · {weeklyInboundList.length} SKU
-                      </td>
-                      <td className="px-3 py-2.5 text-[11px] font-bold text-right font-mono tabular-nums">
-                        {weeklyInboundList.reduce((s, r) => s + r.stor_qty, 0).toLocaleString()} PCS
-                      </td>
-                      <td colSpan={2}></td>
-                    </tr>
-                  </tfoot>
-                )}
               </table>
             </div>
           </div>
