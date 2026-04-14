@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { api, Claim, OrderInbound } from "@/lib/api";
 import KpiCard from "@/components/KpiCard";
 import DataTable from "@/components/DataTable";
@@ -231,6 +231,109 @@ function ClaimDetailModal({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── 리사이즈 가능 테이블 ──
+interface TableRow {
+  prdt_cd: string;
+  prdt_cd_full: string;
+  prdt_nm: string;
+  item_group: string;
+  supplier: string;
+  qty: number;
+  count: number;
+  types: string;
+  imageUrl: string | null;
+}
+
+const COL_DEFS = [
+  { key: "img", label: "", align: "left" as const, minW: 44, initW: 50 },
+  { key: "prdt_cd", label: "스타일코드", align: "left" as const, minW: 80, initW: 110 },
+  { key: "prdt_nm", label: "스타일명", align: "left" as const, minW: 80, initW: 160 },
+  { key: "item_group", label: "복종", align: "left" as const, minW: 50, initW: 70 },
+  { key: "supplier", label: "협력사", align: "left" as const, minW: 80, initW: 150 },
+  { key: "qty", label: "클레임수량", align: "right" as const, minW: 60, initW: 80 },
+  { key: "count", label: "건수", align: "right" as const, minW: 40, initW: 50 },
+  { key: "types", label: "불량유형", align: "left" as const, minW: 100, initW: 220 },
+];
+
+function ResizableClaimTable({ rows, onDoubleClick }: { rows: TableRow[]; onDoubleClick: (fullCode: string) => void }) {
+  const [colWidths, setColWidths] = useState(() => COL_DEFS.map((c) => c.initW));
+  const dragRef = useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
+
+  const onMouseDown = useCallback((colIdx: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { colIdx, startX: e.clientX, startW: colWidths[colIdx] };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      const diff = ev.clientX - dragRef.current.startX;
+      const newW = Math.max(COL_DEFS[dragRef.current.colIdx].minW, dragRef.current.startW + diff);
+      setColWidths((prev) => {
+        const next = [...prev];
+        next[dragRef.current!.colIdx] = newW;
+        return next;
+      });
+    };
+    const onMouseUp = () => {
+      dragRef.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [colWidths]);
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <table style={{ width: colWidths.reduce((a, b) => a + b, 0), tableLayout: "fixed", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            {COL_DEFS.map((col, ci) => (
+              <th
+                key={col.key}
+                className="relative px-2.5 py-2 text-[11px] font-semibold text-slate-500 bg-slate-50 border-b-2 border-slate-200 select-none"
+                style={{ width: colWidths[ci], textAlign: col.align }}
+              >
+                {col.label}
+                {ci < COL_DEFS.length - 1 && (
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-indigo-300/40 z-10"
+                    onMouseDown={(e) => onMouseDown(ci, e)}
+                  />
+                )}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr
+              key={i}
+              className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors cursor-pointer"
+              onDoubleClick={() => onDoubleClick(row.prdt_cd_full)}
+              title="더블클릭하여 상세 보기"
+            >
+              <td className="px-2.5 py-1.5 overflow-hidden" style={{ width: colWidths[0] }}>
+                {row.imageUrl ? (
+                  <img src={row.imageUrl} alt="" className="w-9 h-9 object-cover rounded-lg border border-slate-200" />
+                ) : (
+                  <div className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center text-[8px] text-slate-400">IMG</div>
+                )}
+              </td>
+              <td className="px-2.5 py-1.5 text-[12px] font-mono font-medium text-slate-800 truncate overflow-hidden" style={{ width: colWidths[1] }}>{row.prdt_cd}</td>
+              <td className="px-2.5 py-1.5 text-[12px] font-medium text-slate-800 truncate overflow-hidden" style={{ width: colWidths[2] }}>{row.prdt_nm}</td>
+              <td className="px-2.5 py-1.5 text-[12px] text-slate-600 truncate overflow-hidden" style={{ width: colWidths[3] }}>{row.item_group}</td>
+              <td className="px-2.5 py-1.5 text-[12px] text-slate-600 truncate overflow-hidden" style={{ width: colWidths[4] }}>{row.supplier}</td>
+              <td className="px-2.5 py-1.5 text-[12px] text-right font-mono tabular-nums font-medium text-red-600" style={{ width: colWidths[5] }}>{row.qty.toLocaleString()}</td>
+              <td className="px-2.5 py-1.5 text-[12px] text-right font-mono tabular-nums" style={{ width: colWidths[6] }}>{row.count}</td>
+              <td className="px-2.5 py-1.5 text-[12px] text-slate-600 truncate overflow-hidden" style={{ width: colWidths[7] }}>{row.types}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -554,48 +657,8 @@ export default function ClaimDashboard({ brand, season }: Props) {
           </div>
         </div>
 
-        {/* 커스텀 테이블 (이미지 + 더블클릭) */}
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr>
-                <th className="px-2.5 py-2 text-[11px] font-semibold text-slate-500 bg-slate-50 border-b-2 border-slate-200 text-left w-[52px]"></th>
-                <th className="px-2.5 py-2 text-[11px] font-semibold text-slate-500 bg-slate-50 border-b-2 border-slate-200 text-left" style={{ width: "110px" }}>스타일코드</th>
-                <th className="px-2.5 py-2 text-[11px] font-semibold text-slate-500 bg-slate-50 border-b-2 border-slate-200 text-left">스타일명</th>
-                <th className="px-2.5 py-2 text-[11px] font-semibold text-slate-500 bg-slate-50 border-b-2 border-slate-200 text-left" style={{ width: "70px" }}>복종</th>
-                <th className="px-2.5 py-2 text-[11px] font-semibold text-slate-500 bg-slate-50 border-b-2 border-slate-200 text-left" style={{ width: "120px" }}>협력사</th>
-                <th className="px-2.5 py-2 text-[11px] font-semibold text-slate-500 bg-slate-50 border-b-2 border-slate-200 text-right" style={{ width: "80px" }}>클레임수량</th>
-                <th className="px-2.5 py-2 text-[11px] font-semibold text-slate-500 bg-slate-50 border-b-2 border-slate-200 text-right" style={{ width: "50px" }}>건수</th>
-                <th className="px-2.5 py-2 text-[11px] font-semibold text-slate-500 bg-slate-50 border-b-2 border-slate-200 text-left" style={{ width: "200px" }}>불량유형</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayTable.map((row, i) => (
-                <tr
-                  key={i}
-                  className="border-b border-slate-100 hover:bg-indigo-50/30 transition-colors cursor-pointer"
-                  onDoubleClick={() => setSelectedStyle(row.prdt_cd_full)}
-                  title="더블클릭하여 상세 보기"
-                >
-                  <td className="px-2.5 py-1.5">
-                    {row.imageUrl ? (
-                      <img src={row.imageUrl} alt="" className="w-9 h-9 object-cover rounded-lg border border-slate-200" />
-                    ) : (
-                      <div className="w-9 h-9 bg-slate-100 rounded-lg flex items-center justify-center text-[8px] text-slate-400">IMG</div>
-                    )}
-                  </td>
-                  <td className="px-2.5 py-1.5 text-[12px] font-mono font-medium text-slate-800">{row.prdt_cd}</td>
-                  <td className="px-2.5 py-1.5 text-[12px] font-medium text-slate-800">{row.prdt_nm}</td>
-                  <td className="px-2.5 py-1.5 text-[12px] text-slate-600">{row.item_group}</td>
-                  <td className="px-2.5 py-1.5 text-[12px] text-slate-600">{row.supplier}</td>
-                  <td className="px-2.5 py-1.5 text-[12px] text-right font-mono tabular-nums font-medium text-red-600">{row.qty.toLocaleString()}</td>
-                  <td className="px-2.5 py-1.5 text-[12px] text-right font-mono tabular-nums">{row.count}</td>
-                  <td className="px-2.5 py-1.5 text-[12px] text-slate-600">{row.types}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {/* 커스텀 테이블 (이미지 + 더블클릭 + 리사이즈) */}
+        <ResizableClaimTable rows={displayTable} onDoubleClick={(fullCode) => setSelectedStyle(fullCode)} />
         {!showAll && filteredTable.length > 15 && (
           <div className="text-center mt-2">
             <span className="text-[11px] text-slate-400">
