@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { api, OrderInbound, SeasonSale } from "@/lib/api";
 import { formatNumber, calcYoY, formatDelta } from "@/lib/utils";
 import KpiCard from "@/components/KpiCard";
@@ -388,8 +388,18 @@ export default function OrderDashboard({ brand, season }: Props) {
     }
   }, [weekOptions, selectedWeek]);
 
-  // 선택된 주차의 입고 데이터 (스타일 × 칼라 단위 집계)
-  const weeklyInboundList = useMemo(() => {
+  // 선택된 주차의 입고 데이터 — 스타일 단위 집계 (칼라 목록 포함)
+  interface StyleInbound {
+    prdt_cd: string;
+    prdt_nm: string;
+    colors: string[];
+    stor_qty: number;
+    ord_qty: number;
+    supplier: string;
+    indc_dt: string;
+  }
+
+  const weeklyStyleList = useMemo((): StyleInbound[] => {
     if (!selectedWeek || !currData.length) return [];
     const rows = currData.filter((r) => {
       if ((r.STOR_QTY || 0) <= 0 || !r.INDC_DT_CNFM) return false;
@@ -397,34 +407,33 @@ export default function OrderDashboard({ brand, season }: Props) {
       return getISOWeek(dt) === selectedWeek;
     });
 
-    // 스타일×칼라 단위 집계
-    const map = new Map<string, {
-      prdt_cd: string; prdt_nm: string; color_cd: string;
-      stor_qty: number; indc_dt: string; po_no: string;
-    }>();
+    const map = new Map<string, StyleInbound & { colorSet: Set<string> }>();
     rows.forEach((r) => {
-      const key = `${r.PRDT_CD}_${String(r.COLOR_CD || "")}`;
+      const key = r.PRDT_CD;
       const cur = map.get(key);
+      const clr = String(r.COLOR_CD || "");
       if (!cur) {
         map.set(key, {
           prdt_cd: r.PRDT_CD,
           prdt_nm: r.PRDT_NM || "-",
-          color_cd: String(r.COLOR_CD || "-"),
+          colors: [],
+          colorSet: new Set(clr ? [clr] : []),
           stor_qty: r.STOR_QTY || 0,
+          ord_qty: r.ORD_QTY || 0,
+          supplier: r.MFAC_COMPY_NM || "-",
           indc_dt: String(r.INDC_DT_CNFM || ""),
-          po_no: r.PO_NO || "-",
         });
       } else {
         cur.stor_qty += r.STOR_QTY || 0;
+        cur.ord_qty += r.ORD_QTY || 0;
+        if (clr) cur.colorSet.add(clr);
+        if (r.INDC_DT_CNFM && String(r.INDC_DT_CNFM) > cur.indc_dt) cur.indc_dt = String(r.INDC_DT_CNFM);
       }
     });
 
     return [...map.values()]
-      .sort((a, b) => a.indc_dt.localeCompare(b.indc_dt))
-      .map((r) => ({
-        ...r,
-        order_no: r.po_no.slice(-1) === "1" ? "이니셜" : `리오더(${r.po_no.slice(-1)}차)`,
-      }));
+      .map((r) => ({ ...r, colors: [...r.colorSet].sort() }))
+      .sort((a, b) => b.stor_qty - a.stor_qty);
   }, [currData, selectedWeek]);
 
   // 스타일 이미지 URL 로드 (KG 대표이미지 매핑 JSON)
@@ -436,6 +445,53 @@ export default function OrderDashboard({ brand, season }: Props) {
       .then((map: Record<string, string>) => setStyleImages(map))
       .catch(() => {});
   }, []);
+
+  // ── 스타일 상세 모달 ──
+  const [selectedStyleDetail, setSelectedStyleDetail] = useState<string | null>(null);
+
+  // 선택 스타일의 전체 데이터 (발주+입고, 칼라별)
+  const styleDetailData = useMemo(() => {
+    if (!selectedStyleDetail) return null;
+    const allRows = currData.filter((r) => r.PRDT_CD === selectedStyleDetail);
+    if (!allRows.length) return null;
+
+    const first = allRows[0];
+    // 칼라별 발주/입고 요약
+    const colorMap = new Map<string, { ord_qty: number; stor_qty: number }>();
+    allRows.forEach((r) => {
+      const clr = String(r.COLOR_CD || "-");
+      const cur = colorMap.get(clr) || { ord_qty: 0, stor_qty: 0 };
+      cur.ord_qty += r.ORD_QTY || 0;
+      cur.stor_qty += r.STOR_QTY || 0;
+      colorMap.set(clr, cur);
+    });
+    const colorSummary = [...colorMap.entries()]
+      .map(([color, v]) => ({ color, ...v, diff: v.stor_qty - v.ord_qty }))
+      .sort((a, b) => b.ord_qty - a.ord_qty);
+
+    // 일자별 입고 상세
+    const inboundRows = allRows
+      .filter((r) => (r.STOR_QTY || 0) > 0 && r.INDC_DT_CNFM)
+      .map((r) => ({
+        date: String(r.INDC_DT_CNFM || ""),
+        color: String(r.COLOR_CD || "-"),
+        qty: r.STOR_QTY || 0,
+        po_no: r.PO_NO || "-",
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      prdt_cd: selectedStyleDetail,
+      prdt_nm: first.PRDT_NM || "-",
+      item_group: first.ITEM_GROUP || "-",
+      supplier: first.MFAC_COMPY_NM || "-",
+      imageUrl: styleImages[selectedStyleDetail] || null,
+      totalOrd: colorSummary.reduce((s, c) => s + c.ord_qty, 0),
+      totalStor: colorSummary.reduce((s, c) => s + c.stor_qty, 0),
+      colorSummary,
+      inboundRows,
+    };
+  }, [selectedStyleDetail, currData, styleImages]);
 
   // 시즌별 시작/종료일 계산 (각 시즌마다 자기 기준)
   const getSeasonDates = (sesn: string) => {
@@ -749,7 +805,7 @@ export default function OrderDashboard({ brand, season }: Props) {
             <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-700">📦 입고 실적 ({selectedWeek}W)</h3>
               <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-400">{weeklyInboundList.length}건</span>
+                <span className="text-xs text-slate-400">{weeklyStyleList.length}건</span>
                 <button
                   onClick={() => setInboundExpanded(!inboundExpanded)}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
@@ -760,16 +816,16 @@ export default function OrderDashboard({ brand, season }: Props) {
             </div>
 
             {/* 합계 (헤더 바로 아래 고정) */}
-            {weeklyInboundList.length > 0 && (
+            {weeklyStyleList.length > 0 && (
               <div className="px-5 py-2.5 bg-slate-800 text-white flex items-center text-[11px] font-bold">
                 <span className="flex-1">합계</span>
-                <span className="px-3">{new Set(weeklyInboundList.map((r) => r.prdt_cd)).size} STY</span>
-                <span className="px-3">{weeklyInboundList.length} SKU</span>
-                <span className="px-3 font-mono tabular-nums">{weeklyInboundList.reduce((s, r) => s + r.stor_qty, 0).toLocaleString()} PCS</span>
+                <span className="px-3">{weeklyStyleList.length} STY</span>
+                <span className="px-3">{weeklyStyleList.reduce((s, r) => s + r.colors.length, 0)} CLR</span>
+                <span className="px-3 font-mono tabular-nums">{weeklyStyleList.reduce((s, r) => s + r.stor_qty, 0).toLocaleString()} PCS</span>
               </div>
             )}
 
-            {/* 테이블 본문 (높이 조절) */}
+            {/* 테이블 본문 — 스타일 기준 (더블클릭 상세) */}
             <div
               className="overflow-y-auto transition-all duration-300"
               style={{ maxHeight: inboundExpanded ? "none" : "600px" }}
@@ -781,28 +837,24 @@ export default function OrderDashboard({ brand, season }: Props) {
                     <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">품번</th>
                     <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">칼라</th>
                     <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고수량</th>
-                    <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고일</th>
-                    <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고차수</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">협력사</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {weeklyInboundList.length === 0 ? (
-                    <tr><td colSpan={6} className="text-center py-10 text-slate-400">해당 주차 입고 데이터 없음</td></tr>
+                  {weeklyStyleList.length === 0 ? (
+                    <tr><td colSpan={5} className="text-center py-10 text-slate-400">해당 주차 입고 데이터 없음</td></tr>
                   ) : (
-                    weeklyInboundList.map((row, idx) => (
-                      <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50">
+                    weeklyStyleList.map((row, idx) => (
+                      <tr
+                        key={idx}
+                        className="border-b border-slate-50 hover:bg-indigo-50/40 cursor-pointer transition-colors"
+                        onDoubleClick={() => setSelectedStyleDetail(row.prdt_cd)}
+                      >
                         <td className="px-4 py-2">
                           {styleImages[row.prdt_cd] ? (
-                            <img
-                              src={styleImages[row.prdt_cd]!}
-                              alt={row.prdt_cd}
-                              className="w-10 h-10 rounded-lg object-cover bg-slate-50"
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 text-[8px]">N/A</div>'; }}
-                            />
+                            <img src={styleImages[row.prdt_cd]!} alt="" className="w-10 h-10 rounded-lg object-cover bg-slate-50" />
                           ) : (
-                            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-300 text-[8px]">
-                              {styleImages[row.prdt_cd] === null ? "N/A" : "..."}
-                            </div>
+                            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-300 text-[8px]">IMG</div>
                           )}
                         </td>
                         <td className="px-3 py-2">
@@ -810,36 +862,30 @@ export default function OrderDashboard({ brand, season }: Props) {
                           <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{row.prdt_nm}</div>
                         </td>
                         <td className="px-3 py-2">
-                          {(() => {
-                            const ci = getColorInfo(row.color_cd);
-                            return (
-                              <span
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono font-medium"
-                                style={{
-                                  backgroundColor: ci.bg,
-                                  color: ci.isDark ? "#ffffff" : "#1e293b",
-                                  border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}`,
-                                }}
-                              >
-                                {row.color_cd}
-                              </span>
-                            );
-                          })()}
+                          <div className="flex flex-wrap gap-1">
+                            {row.colors.map((clr) => {
+                              const ci = getColorInfo(clr);
+                              return (
+                                <span
+                                  key={clr}
+                                  className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-medium"
+                                  style={{
+                                    backgroundColor: ci.bg,
+                                    color: ci.isDark ? "#fff" : "#1e293b",
+                                    border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}`,
+                                  }}
+                                >
+                                  {clr}
+                                </span>
+                              );
+                            })}
+                          </div>
                         </td>
-                        <td className="px-3 py-2 text-right font-mono tabular-nums font-medium text-slate-800">
+                        <td className="px-3 py-2 text-right font-mono tabular-nums font-bold text-slate-800">
                           {row.stor_qty.toLocaleString()}
                         </td>
-                        <td className="px-3 py-2 text-center text-slate-600 text-[11px]">
-                          {row.indc_dt.slice(5)}
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-medium ${
-                            row.order_no === "이니셜"
-                              ? "bg-blue-50 text-blue-600"
-                              : "bg-amber-50 text-amber-600"
-                          }`}>
-                            {row.order_no}
-                          </span>
+                        <td className="px-3 py-2 text-[11px] text-slate-600 truncate max-w-[100px]">
+                          {row.supplier}
                         </td>
                       </tr>
                     ))
@@ -847,6 +893,146 @@ export default function OrderDashboard({ brand, season }: Props) {
                 </tbody>
               </table>
             </div>
+
+            {/* 입고 상세 모달 */}
+            {selectedStyleDetail && styleDetailData && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setSelectedStyleDetail(null)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-[800px] max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                  {/* 헤더 — 기본정보 */}
+                  <div className="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
+                    <div className="flex items-center gap-4">
+                      {styleDetailData.imageUrl ? (
+                        <img src={styleDetailData.imageUrl} alt="" className="w-16 h-16 object-cover rounded-xl border border-slate-200" />
+                      ) : (
+                        <div className="w-16 h-16 bg-slate-100 rounded-xl flex items-center justify-center text-slate-300 text-xs">IMG</div>
+                      )}
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900">
+                          {styleDetailData.prdt_cd.replace(/^[A-Z]\d{2}[A-Z]/, "")}
+                          <span className="ml-2 text-sm font-normal text-slate-500">{styleDetailData.prdt_nm}</span>
+                        </h3>
+                        <div className="flex items-center gap-3 mt-1 text-[12px] text-slate-500">
+                          <span>{styleDetailData.item_group}</span>
+                          <span className="text-slate-300">|</span>
+                          <span>{styleDetailData.supplier}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button onClick={() => setSelectedStyleDetail(null)} className="text-slate-400 hover:text-slate-600 text-xl font-bold px-2">✕</button>
+                  </div>
+
+                  {/* KPI 요약 */}
+                  <div className="px-6 py-3 bg-slate-50 grid grid-cols-3 gap-4 text-center border-b border-slate-100">
+                    <div>
+                      <div className="text-[10px] text-slate-500 uppercase font-semibold">발주수량</div>
+                      <div className="text-lg font-bold text-slate-800 tabular-nums">{styleDetailData.totalOrd.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-slate-500 uppercase font-semibold">누적입고</div>
+                      <div className="text-lg font-bold text-indigo-600 tabular-nums">{styleDetailData.totalStor.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-slate-500 uppercase font-semibold">입고율</div>
+                      <div className="text-lg font-bold text-slate-800 tabular-nums">
+                        {styleDetailData.totalOrd > 0 ? `${((styleDetailData.totalStor / styleDetailData.totalOrd) * 100).toFixed(1)}%` : "-"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 칼라별 발주/입고 테이블 */}
+                  <div className="px-6 py-4">
+                    <h4 className="text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">칼라별 발주/입고 현황</h4>
+                    <table className="w-full text-[12px]">
+                      <thead>
+                        <tr className="border-b-2 border-slate-200 bg-slate-50">
+                          <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500">칼라</th>
+                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">발주수량</th>
+                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">누적입고</th>
+                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">증감</th>
+                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">입고율</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {styleDetailData.colorSummary.map((c) => {
+                          const ci = getColorInfo(c.color);
+                          const rate = c.ord_qty > 0 ? (c.stor_qty / c.ord_qty) * 100 : 0;
+                          return (
+                            <tr key={c.color} className="border-b border-slate-50 hover:bg-slate-50/50">
+                              <td className="px-3 py-2">
+                                <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-mono font-medium" style={{ backgroundColor: ci.bg, color: ci.isDark ? "#fff" : "#1e293b", border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}` }}>
+                                  {c.color}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono tabular-nums">{c.ord_qty.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right font-mono tabular-nums font-medium text-indigo-600">{c.stor_qty.toLocaleString()}</td>
+                              <td className={`px-3 py-2 text-right font-mono tabular-nums font-medium ${c.diff > 0 ? "text-red-500" : c.diff < 0 ? "text-blue-500" : "text-slate-400"}`}>
+                                {c.diff > 0 ? "+" : ""}{c.diff.toLocaleString()}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(rate, 100)}%` }} />
+                                  </div>
+                                  <span className="text-[11px] font-mono tabular-nums text-slate-600">{rate.toFixed(0)}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {/* 합계 */}
+                        <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold">
+                          <td className="px-3 py-2 text-[11px] text-slate-700">합계</td>
+                          <td className="px-3 py-2 text-right font-mono tabular-nums">{styleDetailData.totalOrd.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right font-mono tabular-nums text-indigo-600">{styleDetailData.totalStor.toLocaleString()}</td>
+                          <td className={`px-3 py-2 text-right font-mono tabular-nums ${(styleDetailData.totalStor - styleDetailData.totalOrd) >= 0 ? "text-red-500" : "text-blue-500"}`}>
+                            {(styleDetailData.totalStor - styleDetailData.totalOrd) > 0 ? "+" : ""}{(styleDetailData.totalStor - styleDetailData.totalOrd).toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono tabular-nums text-[11px] text-slate-600">
+                            {styleDetailData.totalOrd > 0 ? `${((styleDetailData.totalStor / styleDetailData.totalOrd) * 100).toFixed(0)}%` : "-"}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 일자별 입고 상세 */}
+                  <div className="px-6 py-4 border-t border-slate-100">
+                    <h4 className="text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">일자별 입고 상세</h4>
+                    <table className="w-full text-[12px]">
+                      <thead>
+                        <tr className="border-b-2 border-slate-200 bg-slate-50">
+                          <th className="text-center px-3 py-2 text-[10px] font-semibold text-slate-500">입고일</th>
+                          <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500">칼라</th>
+                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">수량</th>
+                          <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500">PO</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {styleDetailData.inboundRows.length === 0 ? (
+                          <tr><td colSpan={4} className="text-center py-6 text-slate-400">입고 내역 없음</td></tr>
+                        ) : (
+                          styleDetailData.inboundRows.map((r, i) => {
+                            const ci = getColorInfo(r.color);
+                            return (
+                              <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                <td className="px-3 py-2 text-center text-slate-600">{r.date.slice(5)}</td>
+                                <td className="px-3 py-2">
+                                  <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-medium" style={{ backgroundColor: ci.bg, color: ci.isDark ? "#fff" : "#1e293b", border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}` }}>
+                                    {r.color}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-right font-mono tabular-nums font-medium">{r.qty.toLocaleString()}</td>
+                                <td className="px-3 py-2 text-slate-500 font-mono text-[11px]">{r.po_no}</td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 우측: 입고 예정 (플레이스홀더) */}
