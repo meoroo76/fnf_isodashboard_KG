@@ -41,15 +41,19 @@ function ClaimDetailModal({
   onClose: () => void;
 }) {
   const downloadCsv = useCallback(() => {
-    const headers = ["스타일코드","스타일명","복종","협력사","채널","과실구분","불량유형","수량"];
+    const headers = ["접수일","스타일코드","스타일명","복종","협력사","PO","채널","매장","과실구분","불량유형","처리결과","수량"];
     const rows = detail.claims.map((c) => [
+      c.CLAIM_RCPT_DT || c.CLAIM_DT || "",
       detail.prdt_cd,
       detail.prdt_nm,
       c.ITEM_GROUP || "",
       c.MFAC_COMPY_NM || "",
+      (c as Record<string, unknown>).PO_NO as string || "",
       (c as Record<string, unknown>).CHANNEL_TYPE as string || "",
+      (c as Record<string, unknown>).SHOP_NM as string || "",
       c.CLAIM_ERR_CLS_NM || "",
       c.CLAIM_CONTS_ANAL_GROUP_NM || "",
+      (c as Record<string, unknown>).CLAIM_RSLT_ANAL_NM as string || "",
       String(c.CLAIM_QTY || 0),
     ]);
     const bom = "\uFEFF";
@@ -66,7 +70,7 @@ function ClaimDetailModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl w-[780px] max-h-[85vh] overflow-y-auto"
+        className="bg-white rounded-2xl shadow-2xl w-[960px] max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -193,6 +197,7 @@ function ClaimDetailModal({
               <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50">
+                    <th className="px-3 py-2 text-left font-semibold text-slate-500">접수일</th>
                     <th className="px-3 py-2 text-left font-semibold text-slate-500">PO</th>
                     <th className="px-3 py-2 text-left font-semibold text-slate-500">채널</th>
                     <th className="px-3 py-2 text-left font-semibold text-slate-500">매장</th>
@@ -205,6 +210,7 @@ function ClaimDetailModal({
                 <tbody>
                   {detail.claims.map((c, i) => (
                     <tr key={i} className="border-t border-slate-100 hover:bg-slate-50/50">
+                      <td className="px-3 py-1.5 font-mono text-slate-600 whitespace-nowrap">{c.CLAIM_RCPT_DT || c.CLAIM_DT || "-"}</td>
                       <td className="px-3 py-1.5 font-mono text-slate-600">{(c as Record<string, unknown>).PO_NO as string || "-"}</td>
                       <td className="px-3 py-1.5 text-slate-600">{(c as Record<string, unknown>).CHANNEL_TYPE as string || "-"}</td>
                       <td className="px-3 py-1.5 text-slate-600">{(c as Record<string, unknown>).SHOP_NM as string || "-"}</td>

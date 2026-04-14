@@ -107,6 +107,8 @@ export interface Claim {
   CLAIM_CONTS_ANAL_GROUP_NM: string;
   CLAIM_ERR_CLS_NM: string;
   MFAC_COMPY_NM: string;
+  CLAIM_DT?: string;
+  CLAIM_RCPT_DT?: string;
   [key: string]: unknown;
 }
 
