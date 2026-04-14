@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { api, OrderInbound, SeasonSale } from "@/lib/api";
-import { formatNumber, calcYoY, formatDelta } from "@/lib/utils";
+import { formatNumber, calcYoY, formatDelta, sortSizes } from "@/lib/utils";
 import KpiCard from "@/components/KpiCard";
 import DataTable from "@/components/DataTable";
 import {
@@ -460,11 +460,7 @@ export default function OrderDashboard({ brand, season }: Props) {
     // 사이즈 목록 수집 (정렬)
     const sizeSet = new Set<string>();
     allRows.forEach((r) => { if (r.SIZE_CD) sizeSet.add(String(r.SIZE_CD)); });
-    const sizes = [...sizeSet].sort((a, b) => {
-      const na = parseInt(a), nb = parseInt(b);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
-      return a.localeCompare(b);
-    });
+    const sizes = sortSizes([...sizeSet]);
 
     // 칼라×사이즈 매트릭스 구축
     type CellData = { ord: number; stor: number };

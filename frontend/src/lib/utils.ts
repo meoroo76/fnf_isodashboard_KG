@@ -41,3 +41,26 @@ export function deltaColorClass(value: number): string {
 export function formatMillions(value: number): string {
   return Math.round(value / 1_000_000).toLocaleString();
 }
+
+/** 사이즈 정렬 (문자 → 숫자 순, 문자는 XS~3XL 순서) */
+const SIZE_ORDER: Record<string, number> = {
+  XXS: 0, XS: 1, S: 2, M: 3, L: 4, XL: 5,
+  "2XL": 6, XXL: 6, "3XL": 7, XXXL: 7, "4XL": 8, "5XL": 9,
+  F: 50, FREE: 50,
+};
+
+function sizeRank(s: string): number {
+  const upper = s.toUpperCase();
+  if (upper in SIZE_ORDER) return SIZE_ORDER[upper];
+  const n = parseInt(s, 10);
+  if (!isNaN(n)) return 100 + n;
+  return 200;
+}
+
+export function sortSizes(sizes: string[]): string[] {
+  return [...sizes].sort((a, b) => {
+    const ra = sizeRank(a), rb = sizeRank(b);
+    if (ra !== rb) return ra - rb;
+    return a.localeCompare(b);
+  });
+}
