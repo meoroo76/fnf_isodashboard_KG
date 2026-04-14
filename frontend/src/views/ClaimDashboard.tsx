@@ -282,14 +282,22 @@ export default function ClaimDashboard({ brand, season }: Props) {
     const prevAvg = prevCount > 0 ? prevQty / prevCount : 0;
     const currAvg = currCount > 0 ? currQty / currCount : 0;
 
-    const yoy = (curr: number, prev: number) => prev === 0 ? 0 : (1 - curr / prev) * 100;
+    // 전대년비율: (금년/전년 - 1) × 100 → 양수=증가, 음수=감소
+    const yoy = (curr: number, prev: number) => prev === 0 ? 0 : (curr / prev - 1) * 100;
+    // 증감 표기: 금년 - 전년
+    const diff = (curr: number, prev: number, unit: string) => {
+      const d = curr - prev;
+      if (d === 0) return "";
+      const sign = d > 0 ? "+" : "";
+      return ` (${sign}${d.toLocaleString()}${unit})`;
+    };
 
     return [
-      { label: "클레임 건수", value: currCount.toLocaleString(), unit: "건", icon: "🔔", delta: yoy(currCount, prevCount), prevValue: `전년 ${prevCount} 건`, accent: currCount <= prevCount ? "#059669" : "#ef4444" },
-      { label: "클레임 수량", value: currQty.toLocaleString(), unit: "PCS", icon: "📉", delta: yoy(currQty, prevQty), prevValue: `전년 ${prevQty.toLocaleString()} PCS`, accent: currQty <= prevQty ? "#059669" : "#ef4444" },
-      { label: "클레임 스타일", value: currStyles.toLocaleString(), unit: "STY", icon: "👗", delta: yoy(currStyles, prevStyles), prevValue: `전년 ${prevStyles} STY`, accent: "#7c3aed" },
+      { label: "클레임 건수", value: currCount.toLocaleString(), unit: "건", icon: "🔔", delta: yoy(currCount, prevCount), prevValue: `전년 ${prevCount}건${diff(currCount, prevCount, "건")}`, accent: currCount <= prevCount ? "#059669" : "#ef4444" },
+      { label: "클레임 수량", value: currQty.toLocaleString(), unit: "PCS", icon: "📉", delta: yoy(currQty, prevQty), prevValue: `전년 ${prevQty.toLocaleString()}PCS${diff(currQty, prevQty, "PCS")}`, accent: currQty <= prevQty ? "#059669" : "#ef4444" },
+      { label: "클레임 스타일", value: currStyles.toLocaleString(), unit: "STY", icon: "👗", delta: yoy(currStyles, prevStyles), prevValue: `전년 ${prevStyles}STY${diff(currStyles, prevStyles, "STY")}`, accent: "#7c3aed" },
       { label: "관련 협력사", value: currSuppliers.toLocaleString(), unit: "개", icon: "🏭", delta: 0, prevValue: `클레임 발생 협력사`, accent: "#0891b2" },
-      { label: "건당 평균수량", value: currCount > 0 ? currAvg.toFixed(1) : "0", unit: "PCS", icon: "📊", delta: yoy(currAvg, prevAvg), prevValue: prevCount > 0 ? `전년 ${prevAvg.toFixed(1)} PCS` : "", accent: "#d97706" },
+      { label: "건당 평균수량", value: currCount > 0 ? currAvg.toFixed(1) : "0", unit: "PCS", icon: "📊", delta: yoy(currAvg, prevAvg), prevValue: prevCount > 0 ? `전년 ${prevAvg.toFixed(1)}PCS${diff(Math.round(currAvg * 10) / 10, Math.round(prevAvg * 10) / 10, "")}` : "", accent: "#d97706" },
     ];
   }, [currClaims, prevClaims]);
 
