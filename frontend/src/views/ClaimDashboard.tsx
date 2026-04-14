@@ -41,7 +41,7 @@ function ClaimDetailModal({
   onClose: () => void;
 }) {
   const downloadCsv = useCallback(() => {
-    const headers = ["접수일","스타일코드","스타일명","복종","협력사","PO","채널","매장","과실구분","불량유형","처리결과","수량"];
+    const headers = ["접수일","스타일코드","스타일명","복종","협력사","PO","채널","매장","과실구분","내용분석","처리결과","수량"];
     const rows = detail.claims.map((c) => [
       c.CLAIM_RCPT_DT || c.CLAIM_DT || "",
       detail.prdt_cd,
@@ -202,7 +202,7 @@ function ClaimDetailModal({
                     <th className="px-3 py-2 text-left font-semibold text-slate-500">채널</th>
                     <th className="px-3 py-2 text-left font-semibold text-slate-500">매장</th>
                     <th className="px-3 py-2 text-left font-semibold text-slate-500">과실구분</th>
-                    <th className="px-3 py-2 text-left font-semibold text-slate-500">불량유형</th>
+                    <th className="px-3 py-2 text-left font-semibold text-slate-500">내용분석</th>
                     <th className="px-3 py-2 text-left font-semibold text-slate-500">처리결과</th>
                     <th className="px-3 py-2 text-right font-semibold text-slate-500">수량</th>
                   </tr>
