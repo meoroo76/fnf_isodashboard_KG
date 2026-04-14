@@ -449,25 +449,47 @@ export default function OrderDashboard({ brand, season }: Props) {
   // ── 스타일 상세 모달 ──
   const [selectedStyleDetail, setSelectedStyleDetail] = useState<string | null>(null);
 
-  // 선택 스타일의 전체 데이터 (발주+입고, 칼라별)
+  // 선택 스타일의 전체 데이터 (칼라×사이즈 매트릭스)
   const styleDetailData = useMemo(() => {
     if (!selectedStyleDetail) return null;
     const allRows = currData.filter((r) => r.PRDT_CD === selectedStyleDetail);
     if (!allRows.length) return null;
 
     const first = allRows[0];
-    // 칼라별 발주/입고 요약
-    const colorMap = new Map<string, { ord_qty: number; stor_qty: number }>();
+
+    // 사이즈 목록 수집 (정렬)
+    const sizeSet = new Set<string>();
+    allRows.forEach((r) => { if (r.SIZE_CD) sizeSet.add(String(r.SIZE_CD)); });
+    const sizes = [...sizeSet].sort((a, b) => {
+      const na = parseInt(a), nb = parseInt(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b);
+    });
+
+    // 칼라×사이즈 매트릭스 구축
+    type CellData = { ord: number; stor: number };
+    const matrix = new Map<string, Map<string, CellData>>();
+    const colorTotals = new Map<string, CellData>();
+
     allRows.forEach((r) => {
       const clr = String(r.COLOR_CD || "-");
-      const cur = colorMap.get(clr) || { ord_qty: 0, stor_qty: 0 };
-      cur.ord_qty += r.ORD_QTY || 0;
-      cur.stor_qty += r.STOR_QTY || 0;
-      colorMap.set(clr, cur);
+      const sz = String(r.SIZE_CD || "-");
+      if (!matrix.has(clr)) matrix.set(clr, new Map());
+      const row = matrix.get(clr)!;
+      const cell = row.get(sz) || { ord: 0, stor: 0 };
+      cell.ord += r.ORD_QTY || 0;
+      cell.stor += r.STOR_QTY || 0;
+      row.set(sz, cell);
+
+      const ct = colorTotals.get(clr) || { ord: 0, stor: 0 };
+      ct.ord += r.ORD_QTY || 0;
+      ct.stor += r.STOR_QTY || 0;
+      colorTotals.set(clr, ct);
     });
-    const colorSummary = [...colorMap.entries()]
-      .map(([color, v]) => ({ color, ...v, diff: v.stor_qty - v.ord_qty }))
-      .sort((a, b) => b.ord_qty - a.ord_qty);
+
+    const colors = [...colorTotals.entries()]
+      .sort((a, b) => b[1].ord - a[1].ord)
+      .map(([c]) => c);
 
     // 일자별 입고 상세
     const inboundRows = allRows
@@ -475,10 +497,14 @@ export default function OrderDashboard({ brand, season }: Props) {
       .map((r) => ({
         date: String(r.INDC_DT_CNFM || ""),
         color: String(r.COLOR_CD || "-"),
+        size: String(r.SIZE_CD || "-"),
         qty: r.STOR_QTY || 0,
         po_no: r.PO_NO || "-",
       }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+      .sort((a, b) => a.date.localeCompare(b.date) || a.color.localeCompare(b.color));
+
+    const totalOrd = [...colorTotals.values()].reduce((s, c) => s + c.ord, 0);
+    const totalStor = [...colorTotals.values()].reduce((s, c) => s + c.stor, 0);
 
     return {
       prdt_cd: selectedStyleDetail,
@@ -486,9 +512,12 @@ export default function OrderDashboard({ brand, season }: Props) {
       item_group: first.ITEM_GROUP || "-",
       supplier: first.MFAC_COMPY_NM || "-",
       imageUrl: styleImages[selectedStyleDetail] || null,
-      totalOrd: colorSummary.reduce((s, c) => s + c.ord_qty, 0),
-      totalStor: colorSummary.reduce((s, c) => s + c.stor_qty, 0),
-      colorSummary,
+      totalOrd,
+      totalStor,
+      sizes,
+      colors,
+      matrix,
+      colorTotals,
       inboundRows,
     };
   }, [selectedStyleDetail, currData, styleImages]);
@@ -897,7 +926,7 @@ export default function OrderDashboard({ brand, season }: Props) {
             {/* 입고 상세 모달 */}
             {selectedStyleDetail && styleDetailData && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setSelectedStyleDetail(null)}>
-                <div className="bg-white rounded-2xl shadow-2xl w-[800px] max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="bg-white rounded-2xl shadow-2xl w-[1000px] max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                   {/* 헤더 — 기본정보 */}
                   <div className="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
                     <div className="flex items-center gap-4">
@@ -939,58 +968,100 @@ export default function OrderDashboard({ brand, season }: Props) {
                     </div>
                   </div>
 
-                  {/* 칼라별 발주/입고 테이블 */}
-                  <div className="px-6 py-4">
+                  {/* 칼라×사이즈 매트릭스 테이블 */}
+                  <div className="px-6 py-4 overflow-x-auto">
                     <h4 className="text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">칼라별 발주/입고 현황</h4>
-                    <table className="w-full text-[12px]">
+                    <table className="w-full text-[11px] border-collapse">
                       <thead>
-                        <tr className="border-b-2 border-slate-200 bg-slate-50">
-                          <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500">칼라</th>
-                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">발주수량</th>
-                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">누적입고</th>
-                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">증감</th>
-                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">입고율</th>
+                        <tr className="bg-slate-50">
+                          <th className="text-left px-2 py-2 text-[10px] font-semibold text-slate-500 border-b-2 border-slate-200" rowSpan={2}>칼라</th>
+                          <th className="text-left px-2 py-2 text-[10px] font-semibold text-slate-500 border-b-2 border-slate-200" rowSpan={2}>구분</th>
+                          {styleDetailData.sizes.length > 0 && (
+                            <th className="text-center px-1 py-1.5 text-[10px] font-semibold text-slate-500 border-b border-slate-200" colSpan={styleDetailData.sizes.length}>사이즈</th>
+                          )}
+                          <th className="text-right px-2 py-2 text-[10px] font-semibold text-slate-500 border-b-2 border-slate-200 bg-slate-100" rowSpan={2}>합계</th>
                         </tr>
+                        {styleDetailData.sizes.length > 0 && (
+                          <tr className="bg-slate-50">
+                            {styleDetailData.sizes.map((sz) => (
+                              <th key={sz} className="text-right px-1.5 py-1.5 text-[10px] font-semibold text-slate-500 border-b-2 border-slate-200 min-w-[42px]">{sz}</th>
+                            ))}
+                          </tr>
+                        )}
                       </thead>
                       <tbody>
-                        {styleDetailData.colorSummary.map((c) => {
-                          const ci = getColorInfo(c.color);
-                          const rate = c.ord_qty > 0 ? (c.stor_qty / c.ord_qty) * 100 : 0;
-                          return (
-                            <tr key={c.color} className="border-b border-slate-50 hover:bg-slate-50/50">
-                              <td className="px-3 py-2">
-                                <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-mono font-medium" style={{ backgroundColor: ci.bg, color: ci.isDark ? "#fff" : "#1e293b", border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}` }}>
-                                  {c.color}
-                                </span>
+                        {styleDetailData.colors.map((clr) => {
+                          const ci = getColorInfo(clr);
+                          const colorRow = styleDetailData.matrix.get(clr);
+                          const ct = styleDetailData.colorTotals.get(clr) || { ord: 0, stor: 0 };
+                          const labels = ["발주수량", "입고수량", "증감"] as const;
+                          return labels.map((label, li) => (
+                            <tr key={`${clr}_${label}`} className={`${li === 2 ? "border-b-2 border-slate-200" : "border-b border-slate-100"} hover:bg-slate-50/50`}>
+                              {li === 0 && (
+                                <td rowSpan={3} className="px-2 py-1.5 border-r border-slate-100 align-middle">
+                                  <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-mono font-bold" style={{ backgroundColor: ci.bg, color: ci.isDark ? "#fff" : "#1e293b", border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}` }}>
+                                    {clr}
+                                  </span>
+                                </td>
+                              )}
+                              <td className={`px-2 py-1 text-[10px] font-medium border-r border-slate-100 whitespace-nowrap ${li === 2 ? "text-slate-500" : "text-slate-600"}`}>
+                                {label}
                               </td>
-                              <td className="px-3 py-2 text-right font-mono tabular-nums">{c.ord_qty.toLocaleString()}</td>
-                              <td className="px-3 py-2 text-right font-mono tabular-nums font-medium text-indigo-600">{c.stor_qty.toLocaleString()}</td>
-                              <td className={`px-3 py-2 text-right font-mono tabular-nums font-medium ${c.diff > 0 ? "text-red-500" : c.diff < 0 ? "text-blue-500" : "text-slate-400"}`}>
-                                {c.diff > 0 ? "+" : ""}{c.diff.toLocaleString()}
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(rate, 100)}%` }} />
-                                  </div>
-                                  <span className="text-[11px] font-mono tabular-nums text-slate-600">{rate.toFixed(0)}%</span>
-                                </div>
+                              {styleDetailData.sizes.map((sz) => {
+                                const cell = colorRow?.get(sz);
+                                const val = li === 0 ? (cell?.ord || 0) : li === 1 ? (cell?.stor || 0) : ((cell?.stor || 0) - (cell?.ord || 0));
+                                return (
+                                  <td key={sz} className={`px-1.5 py-1 text-right font-mono tabular-nums ${
+                                    li === 1 ? "text-indigo-600 font-medium" : li === 2 ? (val > 0 ? "text-red-500" : val < 0 ? "text-blue-500" : "text-slate-300") : "text-slate-700"
+                                  }`}>
+                                    {val === 0 ? (li === 2 ? "" : "-") : (li === 2 && val > 0 ? "+" : "") + val.toLocaleString()}
+                                  </td>
+                                );
+                              })}
+                              <td className={`px-2 py-1 text-right font-mono tabular-nums font-bold bg-slate-50/80 ${
+                                li === 1 ? "text-indigo-600" : li === 2 ? ((ct.stor - ct.ord) > 0 ? "text-red-500" : (ct.stor - ct.ord) < 0 ? "text-blue-500" : "text-slate-300") : "text-slate-800"
+                              }`}>
+                                {(() => {
+                                  const v = li === 0 ? ct.ord : li === 1 ? ct.stor : ct.stor - ct.ord;
+                                  return v === 0 && li === 2 ? "" : (li === 2 && v > 0 ? "+" : "") + v.toLocaleString();
+                                })()}
                               </td>
                             </tr>
-                          );
+                          ));
                         })}
                         {/* 합계 */}
-                        <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold">
-                          <td className="px-3 py-2 text-[11px] text-slate-700">합계</td>
-                          <td className="px-3 py-2 text-right font-mono tabular-nums">{styleDetailData.totalOrd.toLocaleString()}</td>
-                          <td className="px-3 py-2 text-right font-mono tabular-nums text-indigo-600">{styleDetailData.totalStor.toLocaleString()}</td>
-                          <td className={`px-3 py-2 text-right font-mono tabular-nums ${(styleDetailData.totalStor - styleDetailData.totalOrd) >= 0 ? "text-red-500" : "text-blue-500"}`}>
-                            {(styleDetailData.totalStor - styleDetailData.totalOrd) > 0 ? "+" : ""}{(styleDetailData.totalStor - styleDetailData.totalOrd).toLocaleString()}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono tabular-nums text-[11px] text-slate-600">
-                            {styleDetailData.totalOrd > 0 ? `${((styleDetailData.totalStor / styleDetailData.totalOrd) * 100).toFixed(0)}%` : "-"}
-                          </td>
-                        </tr>
+                        {["발주", "입고", "증감"].map((label, li) => (
+                          <tr key={`total_${label}`} className={`bg-slate-100 font-bold ${li === 2 ? "border-b-2 border-slate-300" : "border-b border-slate-200"}`}>
+                            {li === 0 && (
+                              <td rowSpan={3} className="px-2 py-1.5 text-[11px] font-bold text-slate-700 border-r border-slate-200 align-middle">합계</td>
+                            )}
+                            <td className="px-2 py-1 text-[10px] font-semibold text-slate-600 border-r border-slate-200">{label}</td>
+                            {styleDetailData.sizes.map((sz) => {
+                              let val = 0;
+                              styleDetailData.colors.forEach((clr) => {
+                                const cell = styleDetailData.matrix.get(clr)?.get(sz);
+                                if (li === 0) val += cell?.ord || 0;
+                                else if (li === 1) val += cell?.stor || 0;
+                                else val += (cell?.stor || 0) - (cell?.ord || 0);
+                              });
+                              return (
+                                <td key={sz} className={`px-1.5 py-1 text-right font-mono tabular-nums ${
+                                  li === 1 ? "text-indigo-600" : li === 2 ? (val > 0 ? "text-red-500" : val < 0 ? "text-blue-500" : "text-slate-300") : "text-slate-800"
+                                }`}>
+                                  {val === 0 && li === 2 ? "" : (li === 2 && val > 0 ? "+" : "") + val.toLocaleString()}
+                                </td>
+                              );
+                            })}
+                            <td className={`px-2 py-1 text-right font-mono tabular-nums ${
+                              li === 1 ? "text-indigo-600" : li === 2 ? ((styleDetailData.totalStor - styleDetailData.totalOrd) > 0 ? "text-red-500" : "text-blue-500") : "text-slate-800"
+                            }`}>
+                              {(() => {
+                                const v = li === 0 ? styleDetailData.totalOrd : li === 1 ? styleDetailData.totalStor : styleDetailData.totalStor - styleDetailData.totalOrd;
+                                return (li === 2 && v > 0 ? "+" : "") + v.toLocaleString();
+                              })()}
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -1003,26 +1074,28 @@ export default function OrderDashboard({ brand, season }: Props) {
                         <tr className="border-b-2 border-slate-200 bg-slate-50">
                           <th className="text-center px-3 py-2 text-[10px] font-semibold text-slate-500">입고일</th>
                           <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500">칼라</th>
+                          <th className="text-center px-3 py-2 text-[10px] font-semibold text-slate-500">사이즈</th>
                           <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">수량</th>
                           <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500">PO</th>
                         </tr>
                       </thead>
                       <tbody>
                         {styleDetailData.inboundRows.length === 0 ? (
-                          <tr><td colSpan={4} className="text-center py-6 text-slate-400">입고 내역 없음</td></tr>
+                          <tr><td colSpan={5} className="text-center py-6 text-slate-400">입고 내역 없음</td></tr>
                         ) : (
                           styleDetailData.inboundRows.map((r, i) => {
                             const ci = getColorInfo(r.color);
                             return (
                               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                <td className="px-3 py-2 text-center text-slate-600">{r.date.slice(5)}</td>
-                                <td className="px-3 py-2">
+                                <td className="px-3 py-1.5 text-center text-slate-600">{r.date.slice(5)}</td>
+                                <td className="px-3 py-1.5">
                                   <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-medium" style={{ backgroundColor: ci.bg, color: ci.isDark ? "#fff" : "#1e293b", border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}` }}>
                                     {r.color}
                                   </span>
                                 </td>
-                                <td className="px-3 py-2 text-right font-mono tabular-nums font-medium">{r.qty.toLocaleString()}</td>
-                                <td className="px-3 py-2 text-slate-500 font-mono text-[11px]">{r.po_no}</td>
+                                <td className="px-3 py-1.5 text-center text-slate-600 font-mono">{r.size}</td>
+                                <td className="px-3 py-1.5 text-right font-mono tabular-nums font-medium">{r.qty.toLocaleString()}</td>
+                                <td className="px-3 py-1.5 text-slate-500 font-mono text-[11px]">{r.po_no}</td>
                               </tr>
                             );
                           })
