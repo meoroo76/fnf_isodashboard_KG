@@ -491,16 +491,23 @@ export default function OrderDashboard({ brand, season }: Props) {
       .sort((a, b) => b[1].ord - a[1].ord)
       .map(([c]) => c);
 
-    // 일자별 입고 상세
-    const inboundRows = allRows
+    // 일자별 입고 상세 — 날짜×칼라 기준, 사이즈 가로축
+    const inboundMap = new Map<string, { date: string; color: string; po_no: string; bySz: Map<string, number> }>();
+    allRows
       .filter((r) => (r.STOR_QTY || 0) > 0 && r.INDC_DT_CNFM)
-      .map((r) => ({
-        date: String(r.INDC_DT_CNFM || ""),
-        color: String(r.COLOR_CD || "-"),
-        size: String(r.SIZE_CD || "-"),
-        qty: r.STOR_QTY || 0,
-        po_no: r.PO_NO || "-",
-      }))
+      .forEach((r) => {
+        const key = `${r.INDC_DT_CNFM}_${r.COLOR_CD || "-"}`;
+        const cur = inboundMap.get(key) || {
+          date: String(r.INDC_DT_CNFM || ""),
+          color: String(r.COLOR_CD || "-"),
+          po_no: r.PO_NO || "-",
+          bySz: new Map<string, number>(),
+        };
+        const sz = String(r.SIZE_CD || "-");
+        cur.bySz.set(sz, (cur.bySz.get(sz) || 0) + (r.STOR_QTY || 0));
+        inboundMap.set(key, cur);
+      });
+    const inboundRows = [...inboundMap.values()]
       .sort((a, b) => a.date.localeCompare(b.date) || a.color.localeCompare(b.color));
 
     const totalOrd = [...colorTotals.values()].reduce((s, c) => s + c.ord, 0);
@@ -1066,36 +1073,46 @@ export default function OrderDashboard({ brand, season }: Props) {
                     </table>
                   </div>
 
-                  {/* 일자별 입고 상세 */}
-                  <div className="px-6 py-4 border-t border-slate-100">
+                  {/* 일자별 입고 상세 — 사이즈 가로축 */}
+                  <div className="px-6 py-4 border-t border-slate-100 overflow-x-auto">
                     <h4 className="text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">일자별 입고 상세</h4>
-                    <table className="w-full text-[12px]">
+                    <table className="w-full text-[11px] border-collapse">
                       <thead>
                         <tr className="border-b-2 border-slate-200 bg-slate-50">
-                          <th className="text-center px-3 py-2 text-[10px] font-semibold text-slate-500">입고일</th>
-                          <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500">칼라</th>
-                          <th className="text-center px-3 py-2 text-[10px] font-semibold text-slate-500">사이즈</th>
-                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">수량</th>
-                          <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500">PO</th>
+                          <th className="text-center px-2 py-2 text-[10px] font-semibold text-slate-500">입고일</th>
+                          <th className="text-left px-2 py-2 text-[10px] font-semibold text-slate-500">칼라</th>
+                          {styleDetailData.sizes.map((sz) => (
+                            <th key={sz} className="text-right px-1.5 py-2 text-[10px] font-semibold text-slate-500 min-w-[42px]">{sz}</th>
+                          ))}
+                          <th className="text-right px-2 py-2 text-[10px] font-semibold text-slate-500 bg-slate-100">합계</th>
+                          <th className="text-left px-2 py-2 text-[10px] font-semibold text-slate-500">PO</th>
                         </tr>
                       </thead>
                       <tbody>
                         {styleDetailData.inboundRows.length === 0 ? (
-                          <tr><td colSpan={5} className="text-center py-6 text-slate-400">입고 내역 없음</td></tr>
+                          <tr><td colSpan={styleDetailData.sizes.length + 4} className="text-center py-6 text-slate-400">입고 내역 없음</td></tr>
                         ) : (
                           styleDetailData.inboundRows.map((r, i) => {
                             const ci = getColorInfo(r.color);
+                            const rowTotal = [...r.bySz.values()].reduce((s, v) => s + v, 0);
                             return (
                               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                <td className="px-3 py-1.5 text-center text-slate-600">{r.date.slice(5)}</td>
-                                <td className="px-3 py-1.5">
+                                <td className="px-2 py-1.5 text-center text-slate-600">{r.date.slice(5)}</td>
+                                <td className="px-2 py-1.5">
                                   <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-medium" style={{ backgroundColor: ci.bg, color: ci.isDark ? "#fff" : "#1e293b", border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}` }}>
                                     {r.color}
                                   </span>
                                 </td>
-                                <td className="px-3 py-1.5 text-center text-slate-600 font-mono">{r.size}</td>
-                                <td className="px-3 py-1.5 text-right font-mono tabular-nums font-medium">{r.qty.toLocaleString()}</td>
-                                <td className="px-3 py-1.5 text-slate-500 font-mono text-[11px]">{r.po_no}</td>
+                                {styleDetailData.sizes.map((sz) => {
+                                  const v = r.bySz.get(sz) || 0;
+                                  return (
+                                    <td key={sz} className="px-1.5 py-1.5 text-right font-mono tabular-nums text-slate-700">
+                                      {v > 0 ? v.toLocaleString() : <span className="text-slate-200">-</span>}
+                                    </td>
+                                  );
+                                })}
+                                <td className="px-2 py-1.5 text-right font-mono tabular-nums font-bold text-slate-800 bg-slate-50/80">{rowTotal.toLocaleString()}</td>
+                                <td className="px-2 py-1.5 text-slate-400 font-mono text-[10px] truncate max-w-[100px]">{r.po_no}</td>
                               </tr>
                             );
                           })
