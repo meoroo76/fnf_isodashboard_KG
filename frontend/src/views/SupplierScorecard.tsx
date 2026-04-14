@@ -5,7 +5,7 @@ import { api, OrderInbound, CostMaster, Claim } from "@/lib/api";
 import KpiCard from "@/components/KpiCard";
 import DataTable from "@/components/DataTable";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 
 interface Props { brand: string; season: string; }
@@ -155,10 +155,18 @@ export default function SupplierScorecard({ brand, season }: Props) {
   }, [supplierScores]);
 
   /* ── Bar chart data (top 15) ── */
+  const GRADE_COLORS: Record<string, string> = { A: "#22c55e", B: "#eab308", C: "#f97316", D: "#ef4444" };
+  function calcGrade(score: number): string {
+    if (score >= 80) return "A";
+    if (score >= 60) return "B";
+    if (score >= 40) return "C";
+    return "D";
+  }
   const barData = useMemo(() =>
     supplierScores.slice(0, 15).map((s) => ({
       name: s.name.length > 12 ? s.name.slice(0, 12) + "…" : s.name,
       종합점수: Math.round(s.compositeScore),
+      grade: calcGrade(s.compositeScore),
     })),
   [supplierScores]);
 
@@ -211,13 +219,21 @@ export default function SupplierScorecard({ brand, season }: Props) {
               contentStyle={{ background: "#0f172a", border: "none", borderRadius: 12, fontSize: 12, color: "#e2e8f0" }}
               formatter={(v) => [`${v}점`, "종합점수"]}
             />
-            <Bar
-              dataKey="종합점수"
-              radius={[0, 6, 6, 0]}
-              fill="#f59e0b"
-            />
+            <Bar dataKey="종합점수" radius={[0, 6, 6, 0]}>
+              {barData.map((entry, idx) => (
+                <Cell key={idx} fill={GRADE_COLORS[entry.grade] || "#94a3b8"} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
+        <div className="flex items-center gap-4 mt-3 justify-center">
+          {Object.entries(GRADE_COLORS).map(([grade, color]) => (
+            <div key={grade} className="flex items-center gap-1.5 text-xs text-slate-500">
+              <div className="w-3 h-3 rounded-sm" style={{ background: color }} />
+              {grade}등급 ({grade === "A" ? "80+" : grade === "B" ? "60~79" : grade === "C" ? "40~59" : "~39"}점)
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Table */}
