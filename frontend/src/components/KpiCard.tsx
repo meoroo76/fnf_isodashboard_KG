@@ -60,7 +60,7 @@ export default function KpiCard({
               )}
             >
               {delta > 0 ? "▲" : delta < 0 ? "▼" : "—"}
-              {formatDelta(Math.abs(delta))}
+              {Math.abs(delta).toFixed(1)}%
             </span>
           )}
         </div>
@@ -105,7 +105,7 @@ export default function KpiCard({
                 )}
               >
                 {sub.delta > 0 ? "▲" : sub.delta < 0 ? "▼" : "—"}
-                {formatDelta(Math.abs(sub.delta))}
+                {Math.abs(sub.delta).toFixed(1)}%
               </span>
             )}
           </div>

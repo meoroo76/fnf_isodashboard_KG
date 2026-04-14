@@ -13,8 +13,9 @@ import {
 interface Props { brand: string; season: string; }
 
 const DEFECT_COLORS: Record<string, string> = {
-  "봉제불량": "#ef4444", "원단불량": "#3b82f6", "부자재불량": "#f59e0b",
-  "재단불량": "#8b5cf6", "기타불량": "#6b7280",
+  "업체과실": "#7cb9a8", "제품특성": "#a8b4e0", "유통과실": "#d4b896",
+  "부자재불량": "#c9a8d4", "봉제불량": "#e8b4b4", "원단불량": "#8ec5d6",
+  "재단불량": "#b8c9a0", "기타불량": "#c4bfb6", "기타": "#c4bfb6",
 };
 
 export default function ClaimDashboard({ brand, season }: Props) {
@@ -45,6 +46,11 @@ export default function ClaimDashboard({ brand, season }: Props) {
     const currStyles = new Set(currClaims.map((c) => c.PRDT_CD)).size;
     const prevStyles = new Set(prevClaims.map((c) => c.PRDT_CD)).size;
     const currSuppliers = new Set(currClaims.map((c) => c.MFAC_COMPY_NM)).size;
+    const prevAvg = prevCount > 0 ? prevQty / prevCount : 0;
+    const currAvg = currCount > 0 ? currQty / currCount : 0;
+
+    // 전대년비율: (1 - 금년/전년) * 100 → 양수=감소(좋음), 음수=증가(나쁨)
+    const yoy = (curr: number, prev: number) => prev === 0 ? 0 : (1 - curr / prev) * 100;
 
     return [
       {
@@ -52,7 +58,7 @@ export default function ClaimDashboard({ brand, season }: Props) {
         value: currCount.toLocaleString(),
         unit: "건",
         icon: "🔔",
-        delta: currCount - prevCount,
+        delta: yoy(currCount, prevCount),
         prevValue: `전년 ${prevCount} 건`,
         accent: currCount <= prevCount ? "#059669" : "#ef4444",
       },
@@ -61,7 +67,7 @@ export default function ClaimDashboard({ brand, season }: Props) {
         value: currQty.toLocaleString(),
         unit: "PCS",
         icon: "📉",
-        delta: currQty - prevQty,
+        delta: yoy(currQty, prevQty),
         prevValue: `전년 ${prevQty.toLocaleString()} PCS`,
         accent: currQty <= prevQty ? "#059669" : "#ef4444",
       },
@@ -70,7 +76,7 @@ export default function ClaimDashboard({ brand, season }: Props) {
         value: currStyles.toLocaleString(),
         unit: "STY",
         icon: "👗",
-        delta: currStyles - prevStyles,
+        delta: yoy(currStyles, prevStyles),
         prevValue: `전년 ${prevStyles} STY`,
         accent: "#7c3aed",
       },
@@ -85,11 +91,11 @@ export default function ClaimDashboard({ brand, season }: Props) {
       },
       {
         label: "건당 평균수량",
-        value: currCount > 0 ? (currQty / currCount).toFixed(1) : "0",
+        value: currCount > 0 ? currAvg.toFixed(1) : "0",
         unit: "PCS",
         icon: "📊",
-        delta: 0,
-        prevValue: prevCount > 0 ? `전년 ${(prevQty / prevCount).toFixed(1)} PCS` : "",
+        delta: yoy(currAvg, prevAvg),
+        prevValue: prevCount > 0 ? `전년 ${prevAvg.toFixed(1)} PCS` : "",
         accent: "#d97706",
       },
     ];
@@ -115,12 +121,16 @@ export default function ClaimDashboard({ brand, season }: Props) {
       map.set(sup, (map.get(sup) || 0) + (c.CLAIM_QTY || 0));
     });
     return [...map.entries()]
-      .map(([name, qty]) => ({ name: name.length > 12 ? name.slice(0, 12) + "…" : name, 수량: qty }))
+      .map(([name, qty]) => ({ name, 수량: qty }))
       .sort((a, b) => b.수량 - a.수량)
       .slice(0, 10);
   }, [currClaims]);
 
   // 스타일별 클레임 테이블
+  const [showAll, setShowAll] = useState(false);
+  const [supplierFilter, setSupplierFilter] = useState("");
+  const [styleSearch, setStyleSearch] = useState("");
+
   const styleTable = useMemo(() => {
     const map = new Map<string, { prdt_nm: string; item_group: string; qty: number; count: number; supplier: string; types: Set<string> }>();
     currClaims.forEach((c) => {
@@ -133,7 +143,7 @@ export default function ClaimDashboard({ brand, season }: Props) {
     });
     return [...map.entries()]
       .map(([code, v]) => ({
-        prdt_cd: code,
+        prdt_cd: code.replace(/^[A-Z]\d{2}[A-Z]/, ""),
         prdt_nm: v.prdt_nm,
         item_group: v.item_group,
         supplier: v.supplier,
@@ -141,9 +151,25 @@ export default function ClaimDashboard({ brand, season }: Props) {
         count: v.count,
         types: [...v.types].join(", "),
       }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 30);
+      .sort((a, b) => b.qty - a.qty);
   }, [currClaims]);
+
+  const supplierList = useMemo(() => {
+    const set = new Set(styleTable.map((r) => r.supplier));
+    return [...set].sort();
+  }, [styleTable]);
+
+  const filteredTable = useMemo(() => {
+    let rows = styleTable;
+    if (supplierFilter) rows = rows.filter((r) => r.supplier === supplierFilter);
+    if (styleSearch) {
+      const q = styleSearch.toLowerCase();
+      rows = rows.filter((r) => r.prdt_cd.toLowerCase().includes(q) || r.prdt_nm.toLowerCase().includes(q));
+    }
+    return rows;
+  }, [styleTable, supplierFilter, styleSearch]);
+
+  const displayTable = showAll ? filteredTable : filteredTable.slice(0, 15);
 
   if (loading) {
     return (
@@ -189,10 +215,10 @@ export default function ClaimDashboard({ brand, season }: Props) {
                 const pct = total > 0 ? (item.value / total) * 100 : 0;
                 return (
                   <div key={item.name} className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ background: DEFECT_COLORS[item.name] || "#94a3b8" }} />
-                    <span className="text-xs text-slate-600 w-16 truncate">{item.name}</span>
+                    <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: DEFECT_COLORS[item.name] || "#c4bfb6" }} />
+                    <span className="text-xs text-slate-600 w-28 truncate">{item.name} ({item.value.toLocaleString()}PCS)</span>
                     <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: DEFECT_COLORS[item.name] || "#94a3b8" }} />
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: DEFECT_COLORS[item.name] || "#c4bfb6" }} />
                     </div>
                     <span className="text-xs font-mono text-slate-500 w-10 text-right">{pct.toFixed(0)}%</span>
                   </div>
@@ -205,13 +231,18 @@ export default function ClaimDashboard({ brand, season }: Props) {
         {/* 협력사별 클레임 */}
         <div className="bg-white rounded-2xl border border-slate-100 p-6">
           <h3 className="text-sm font-bold text-slate-700 mb-4">🏭 협력사별 클레임 TOP 10</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={supplierClaims} layout="vertical" barSize={14}>
+          <ResponsiveContainer width="100%" height={Math.max(280, supplierClaims.length * 36)}>
+            <BarChart data={supplierClaims} layout="vertical" barSize={16}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={{ background: "#0f172a", border: "none", borderRadius: 12, fontSize: 12, color: "#e2e8f0" }} />
-              <Bar dataKey="수량" fill="#ef4444" radius={[0, 6, 6, 0]} />
+              <Bar dataKey="수량" radius={[0, 6, 6, 0]}>
+                {supplierClaims.map((_, i) => {
+                  const colors = Object.values(DEFECT_COLORS);
+                  return <Cell key={i} fill={colors[i % colors.length]} />;
+                })}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -219,18 +250,53 @@ export default function ClaimDashboard({ brand, season }: Props) {
 
       {/* 스타일별 클레임 테이블 */}
       <div>
-        <h3 className="text-sm font-bold text-slate-700 mb-3">📋 스타일별 클레임 현황 (TOP 30)</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold text-slate-700">📋 스타일별 클레임 현황</h3>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="스타일 검색..."
+              value={styleSearch}
+              onChange={(e) => setStyleSearch(e.target.value)}
+              className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-slate-300 w-40"
+            />
+            <select
+              value={supplierFilter}
+              onChange={(e) => setSupplierFilter(e.target.value)}
+              className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-slate-300"
+            >
+              <option value="">전체 협력사</option>
+              {supplierList.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            {!showAll && filteredTable.length > 15 && (
+              <button
+                onClick={() => setShowAll(true)}
+                className="px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
+              >
+                전체 보기 ({filteredTable.length})
+              </button>
+            )}
+            {showAll && (
+              <button
+                onClick={() => setShowAll(false)}
+                className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                TOP 15
+              </button>
+            )}
+          </div>
+        </div>
         <DataTable
           columns={[
-            { key: "prdt_cd", label: "스타일코드", align: "left" as const },
+            { key: "prdt_cd", label: "스타일코드", align: "left" as const, width: "120px" },
             { key: "prdt_nm", label: "스타일명", align: "left" as const },
-            { key: "item_group", label: "복종", align: "left" as const },
-            { key: "supplier", label: "협력사", align: "left" as const },
-            { key: "qty", label: "클레임수량", align: "right" as const, format: (v: unknown) => Number(v).toLocaleString() },
-            { key: "count", label: "건수", align: "right" as const },
-            { key: "types", label: "불량유형", align: "left" as const },
+            { key: "item_group", label: "복종", align: "left" as const, width: "70px" },
+            { key: "supplier", label: "협력사", align: "left" as const, width: "120px" },
+            { key: "qty", label: "클레임수량", align: "right" as const, width: "80px", format: (v: unknown) => Number(v).toLocaleString() },
+            { key: "count", label: "건수", align: "right" as const, width: "60px" },
+            { key: "types", label: "불량유형", align: "left" as const, width: "200px" },
           ]}
-          data={styleTable}
+          data={displayTable}
           compact
         />
       </div>
