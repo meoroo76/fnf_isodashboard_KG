@@ -357,13 +357,11 @@ export default function ClaimDashboard({ brand, season }: Props) {
       setOrderData(orderRes.data);
       setLoading(false);
 
-      // 이미지 로드 (현재 시즌 클레임 스타일)
-      const currPrdtCds = [...new Set(
-        claimRes.data.filter((c) => c.SESN === season).map((c) => c.PRDT_CD)
-      )];
-      if (currPrdtCds.length > 0) {
-        api.getStyleImages(currPrdtCds).then((res) => setStyleImages(res.data)).catch(() => {});
-      }
+      // 이미지 매핑 JSON 로드 (KG 대표이미지)
+      fetch("/data/prdt_img_map.json")
+        .then((r) => r.ok ? r.json() : {})
+        .then((map: Record<string, string>) => setStyleImages(map))
+        .catch(() => {});
     }).catch(() => setLoading(false));
   }, [brand, season]);
 
