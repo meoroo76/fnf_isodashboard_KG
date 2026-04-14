@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { calcYoY } from "@/lib/utils";
 import KpiCard from "@/components/KpiCard";
 import DataTable from "@/components/DataTable";
+import { useProductImages } from "@/hooks/useProductImages";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   Treemap,
@@ -36,6 +37,7 @@ export default function CostBreakdown({ brand, season }: Props) {
   const [currAccount, setCurrAccount] = useState<AccountRow[]>([]);
   const [prevAccount, setPrevAccount] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const imgMap = useProductImages();
 
   const prevSeason = useMemo(() => {
     const y = parseInt(season.slice(0, 2));
@@ -255,7 +257,7 @@ export default function CostBreakdown({ brand, season }: Props) {
         <h3 className="text-sm font-bold text-slate-700 mb-3">📋 스타일별 원가 상세 (TOP 30)</h3>
         <DataTable
           columns={[
-            { key: "prdt_cd", label: "스타일코드", align: "left" as const },
+            { key: "prdt_cd", label: "스타일코드", align: "left" as const, render: (_v: unknown, row: Record<string, unknown>) => { const cd = String(row.prdt_cd_full || row.prdt_cd || ""); const img = imgMap[cd]; return (<span className="inline-flex items-center gap-1.5">{img ? <img src={img} alt="" className="w-7 h-7 object-cover rounded border border-slate-200 flex-shrink-0" /> : <span className="w-7 h-7 rounded border border-slate-200 bg-slate-50 flex items-center justify-center text-[9px] text-slate-400 flex-shrink-0">IMG</span>}{String(row.prdt_cd || "")}</span>); } },
             { key: "prdt_nm", label: "스타일명", align: "left" as const },
             { key: "item_group", label: "복종", align: "left" as const },
             { key: "totalAmt", label: "총원가(USD)", align: "right" as const },

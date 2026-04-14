@@ -5,6 +5,7 @@ import { api, OrderInbound } from "@/lib/api";
 import { formatNumber, calcYoY, formatDelta } from "@/lib/utils";
 import KpiCard from "@/components/KpiCard";
 import DataTable from "@/components/DataTable";
+import { useProductImages } from "@/hooks/useProductImages";
 import {
   BarChart,
   Bar,
@@ -24,6 +25,7 @@ interface Props {
 export default function DeliveryMgmt({ brand, season }: Props) {
   const [data, setData] = useState<OrderInbound[]>([]);
   const [loading, setLoading] = useState(true);
+  const imgMap = useProductImages();
 
   useEffect(() => {
     setLoading(true);
@@ -185,7 +187,7 @@ export default function DeliveryMgmt({ brand, season }: Props) {
   }
 
   const tableColumns = [
-    { key: "prdt_cd", label: "스타일코드", align: "left" as const },
+    { key: "prdt_cd", label: "스타일코드", align: "left" as const, render: (_v: unknown, row: Record<string, unknown>) => { const cd = String(row.prdt_cd || ""); const img = imgMap[cd]; return (<span className="inline-flex items-center gap-1.5">{img ? <img src={img} alt="" className="w-7 h-7 object-cover rounded border border-slate-200 flex-shrink-0" /> : <span className="w-7 h-7 rounded border border-slate-200 bg-slate-50 flex items-center justify-center text-[9px] text-slate-400 flex-shrink-0">IMG</span>}{cd}</span>); } },
     { key: "prdt_nm", label: "스타일명", align: "left" as const },
     { key: "item_group", label: "복종", align: "left" as const },
     { key: "supplier", label: "협력사", align: "left" as const },

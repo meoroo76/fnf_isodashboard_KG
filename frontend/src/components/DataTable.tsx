@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { cn } from "@/lib/utils";
 
 interface Column {
@@ -9,6 +10,7 @@ interface Column {
   group?: string;
   format?: (value: unknown, row: Record<string, unknown>) => string;
   colorCode?: (value: unknown, row: Record<string, unknown>) => string | undefined;
+  render?: (value: unknown, row: Record<string, unknown>) => React.ReactNode;
   width?: string;
 }
 
@@ -91,6 +93,7 @@ export default function DataTable({
                 const raw = row[col.key];
                 const display = col.format ? col.format(raw, row) : String(raw ?? "");
                 const cellColor = col.colorCode?.(raw, row);
+                const rendered = col.render ? col.render(raw, row) : null;
                 return (
                   <td
                     key={col.key}
@@ -105,7 +108,7 @@ export default function DataTable({
                       backgroundColor: cellColor || undefined,
                     }}
                   >
-                    {display}
+                    {rendered ?? display}
                   </td>
                 );
               })}

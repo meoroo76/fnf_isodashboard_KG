@@ -5,6 +5,7 @@ import { api, Claim } from "@/lib/api";
 import { calcYoY } from "@/lib/utils";
 import KpiCard from "@/components/KpiCard";
 import DataTable from "@/components/DataTable";
+import { useProductImages } from "@/hooks/useProductImages";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
@@ -23,6 +24,7 @@ function heatColor(value: number, max: number): string {
 export default function DefectAnalysis({ brand, season }: Props) {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
+  const imgMap = useProductImages();
 
   const prevSeason = useMemo(() => {
     const y = parseInt(season.slice(0, 2));
@@ -250,7 +252,7 @@ export default function DefectAnalysis({ brand, season }: Props) {
           <h3 className="text-sm font-bold text-slate-700 mb-3">📋 불량 TOP 10 스타일 상세</h3>
           <DataTable
             columns={[
-              { key: "prdt_cd", label: "스타일코드", align: "left" as const },
+              { key: "prdt_cd", label: "스타일코드", align: "left" as const, render: (_v: unknown, row: Record<string, unknown>) => { const cd = String(row.prdt_cd_full || row.prdt_cd || ""); const img = imgMap[cd]; return (<span className="inline-flex items-center gap-1.5">{img ? <img src={img} alt="" className="w-7 h-7 object-cover rounded border border-slate-200 flex-shrink-0" /> : <span className="w-7 h-7 rounded border border-slate-200 bg-slate-50 flex items-center justify-center text-[9px] text-slate-400 flex-shrink-0">IMG</span>}{String(row.prdt_cd || "")}</span>); } },
               { key: "prdt_nm", label: "스타일명", align: "left" as const },
               { key: "item_group", label: "복종", align: "left" as const },
               { key: "supplier", label: "협력사", align: "left" as const },
