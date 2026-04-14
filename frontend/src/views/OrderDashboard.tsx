@@ -427,20 +427,15 @@ export default function OrderDashboard({ brand, season }: Props) {
       }));
   }, [currData, selectedWeek]);
 
-  // 스타일 이미지 URL 로드
+  // 스타일 이미지 URL 로드 (KG 대표이미지 매핑 JSON)
   const [styleImages, setStyleImages] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
-    if (!weeklyInboundList.length) return;
-    const codes = [...new Set(weeklyInboundList.map((r) => r.prdt_cd))];
-    // 이미 로드된 코드 제외
-    const newCodes = codes.filter((c) => !(c in styleImages));
-    if (!newCodes.length) return;
-
-    api.getStyleImages(newCodes).then((res) => {
-      setStyleImages((prev) => ({ ...prev, ...res.data }));
-    }).catch(() => {});
-  }, [weeklyInboundList]);
+    fetch("/data/prdt_img_map.json")
+      .then((r) => r.ok ? r.json() : {})
+      .then((map: Record<string, string>) => setStyleImages(map))
+      .catch(() => {});
+  }, []);
 
   // 시즌별 시작/종료일 계산 (각 시즌마다 자기 기준)
   const getSeasonDates = (sesn: string) => {
