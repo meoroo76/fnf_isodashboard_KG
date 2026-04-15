@@ -124,6 +124,40 @@ def parse_schedule(filepath: Path, season: str) -> list[dict]:
         spot = str(safe(row, col["spot"]) or "").strip()
         item_code = str(safe(row, col["item_code"]) or "").strip()
 
+        # M열 (스타일수 카운트: 1=신규스타일, 0=동일스타일 다른칼라)
+        m_col_idx = 5  # Col 6 (F) for both SS and FW
+        m_val = safe(row, m_col_idx)
+        try:
+            is_m = int(float(m_val)) if m_val else 0
+        except (ValueError, TypeError):
+            is_m = 0
+
+        # 생산 진행 완료 컬럼 (FW 기준, SS는 일부 다를 수 있음)
+        if is_fw:
+            progress = {
+                "fabric_out": fmt_date(safe(row, 17)),    # R: 원단출고일
+                "trim_out": fmt_date(safe(row, 19)),      # T: 부자재출고일
+                "qc_done": fmt_date(safe(row, 21)),       # V: QC컨펌일
+                "pp_done": fmt_date(safe(row, 23)),       # X: PP컨펌일
+                "cutting_done": fmt_date(safe(row, 25)),  # Z: 재단실행
+                "putin_done": fmt_date(safe(row, 27)),    # AB: 투입실행
+                "finish_done": fmt_date(safe(row, 29)),   # AD: 생산완료실행
+                "ship_done": fmt_date(safe(row, 32)),     # AG: 선적실행
+                "arrival_done": fmt_date(safe(row, 34)),  # AI: 실입고일
+            }
+        else:
+            progress = {
+                "fabric_out": fmt_date(safe(row, 13)),    # N: 원단출고
+                "trim_out": fmt_date(safe(row, 14)),      # O: 부자재출고
+                "qc_done": fmt_date(safe(row, 15)),       # P: QC컨펌
+                "pp_done": fmt_date(safe(row, 16)),       # Q: PP컨펌
+                "cutting_done": fmt_date(safe(row, 18)),  # S: 재단실행
+                "putin_done": fmt_date(safe(row, 20)),    # U: 투입실행
+                "finish_done": fmt_date(safe(row, 22)),   # W: 생산완료실행
+                "ship_done": fmt_date(safe(row, 25)),     # Z: 선적실행
+                "arrival_done": fmt_date(safe(row, 27)),  # AB: 실입고일
+            }
+
         # PCS 정리
         try:
             pcs_num = int(float(pcs)) if pcs else 0
@@ -145,6 +179,8 @@ def parse_schedule(filepath: Path, season: str) -> list[dict]:
             "actual_dt": actual_dt,
             "remark": remark,
             "item_code": item_code,
+            "is_m": is_m,
+            **progress,
         })
 
     wb.close()

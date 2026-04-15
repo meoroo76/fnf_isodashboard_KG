@@ -152,6 +152,16 @@ export interface ScheduleRow {
   actual_dt: string | null;
   remark: string;
   item_code: string;
+  is_m: number;
+  fabric_out: string | null;
+  trim_out: string | null;
+  qc_done: string | null;
+  pp_done: string | null;
+  cutting_done: string | null;
+  putin_done: string | null;
+  finish_done: string | null;
+  ship_done: string | null;
+  arrival_done: string | null;
 }
 
 export interface SeasonSale {

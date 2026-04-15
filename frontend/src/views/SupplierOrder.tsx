@@ -425,6 +425,89 @@ export default function SupplierOrder({ brand, season }: Props) {
           </table>
         </div>
       </div>
+
+      {/* 26FW 생산진행 KPI */}
+      {season.endsWith("F") && <ProductionProgress schedule={schedule} selSuppliers={selSuppliers} selStaff={selStaff} staffMap={staffMap} />}
+    </div>
+  );
+}
+
+/** 26FW 생산진행 KPI 카드 */
+function ProductionProgress({
+  schedule,
+  selSuppliers,
+  selStaff,
+  staffMap,
+}: {
+  schedule: ScheduleRow[];
+  selSuppliers: Set<string>;
+  selStaff: Set<string>;
+  staffMap: Map<string, string>;
+}) {
+  const STAGES: { label: string; key: string; icon: string; color: string }[] = [
+    { label: "원단출고", key: "fabric_out", icon: "🧵", color: "#8b5cf6" },
+    { label: "부자재출고", key: "trim_out", icon: "🔩", color: "#6366f1" },
+    { label: "Q.C", key: "qc_done", icon: "🔍", color: "#3b82f6" },
+    { label: "P.P", key: "pp_done", icon: "✅", color: "#0ea5e9" },
+    { label: "재단/편직", key: "cutting_done", icon: "✂️", color: "#14b8a6" },
+    { label: "투입", key: "putin_done", icon: "🏭", color: "#10b981" },
+    { label: "생산완료", key: "finish_done", icon: "📦", color: "#22c55e" },
+    { label: "선적", key: "ship_done", icon: "🚢", color: "#f59e0b" },
+    { label: "입고", key: "arrival_done", icon: "🏠", color: "#ef4444" },
+  ];
+
+  // 필터 적용된 M=1 스타일만
+  const filtered = useMemo(() => {
+    return schedule.filter((r) => {
+      if (r.is_m !== 1) return false;
+      if (selSuppliers.size > 0 && !selSuppliers.has(r.supplier)) return false;
+      if (selStaff.size > 0) {
+        const staff = staffMap.get(r.style_no);
+        if (!staff || !selStaff.has(staff)) return false;
+      }
+      return true;
+    });
+  }, [schedule, selSuppliers, selStaff, staffMap]);
+
+  const totalM = filtered.length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-4">
+        <div className="w-1.5 h-7 rounded-full bg-amber-500" />
+        <h2 className="text-lg font-bold text-slate-800">26FW 생산진행 현황</h2>
+        <span className="text-xs text-slate-400">{totalM} STY 기준</span>
+      </div>
+
+      <div className="grid grid-cols-9 gap-2">
+        {STAGES.map((stage) => {
+          const done = filtered.filter((r) => r[stage.key as keyof ScheduleRow]).length;
+          const pct = totalM > 0 ? (done / totalM) * 100 : 0;
+
+          return (
+            <div
+              key={stage.key}
+              className="bg-white rounded-xl border border-slate-100 p-3 text-center hover:shadow-md transition-shadow"
+            >
+              <div className="text-lg mb-1">{stage.icon}</div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">{stage.label}</div>
+              {/* 프로그레스 바 */}
+              <div className="w-full h-2 bg-slate-100 rounded-full mb-2 overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${pct}%`, backgroundColor: stage.color }}
+                />
+              </div>
+              <div className="text-xl font-bold" style={{ color: stage.color }}>
+                {pct.toFixed(0)}%
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">
+                {done} / {totalM}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
