@@ -76,13 +76,35 @@ def parse_schedule(filepath: Path, season: str) -> list[dict]:
     ws = wb[sheet_name]
     log(f"  시트: {sheet_name}")
 
+    # 시즌별 컬럼 매핑 (0-based index)
+    # 26SS: ● 2026 02 05 시트
+    COL_MAP_SS = {
+        "status": 0, "spot": 4, "style_no": 5, "style_name": 7,
+        "color": 8, "pcs": 9, "supplier": 10, "staff": 11,
+        "supplier_eta": 12, "eta": 26, "actual_dt": 27,
+        "remark": 33, "item_code": 29,
+    }
+    # 26FW: ● 26FW ORDER LIST 시트
+    COL_MAP_FW = {
+        "status": 0, "spot": 7, "style_no": 8, "style_name": 10,
+        "color": 11, "pcs": 12, "supplier": 13, "staff": 14,
+        "supplier_eta": 15, "eta": 33, "actual_dt": 34,
+        "remark": 37, "item_code": 2,
+    }
+
+    is_fw = season.upper().endswith("F")
+    col = COL_MAP_FW if is_fw else COL_MAP_SS
+
+    def safe(row, idx):
+        return row[idx] if len(row) > idx else None
+
     records = []
     for i, row in enumerate(ws.iter_rows(min_row=10, values_only=True)):
-        if not row or len(row) < 28:
+        if not row or len(row) < 20:
             continue
 
-        status = str(row[0] or "").strip()  # A: 입고여부
-        style_no = str(row[5] or "").strip()  # F: STYLE NO.
+        status = str(safe(row, col["status"]) or "").strip()
+        style_no = str(safe(row, col["style_no"]) or "").strip()
         if not style_no:
             continue
 
@@ -90,17 +112,17 @@ def parse_schedule(filepath: Path, season: str) -> list[dict]:
         if status == "캔슬":
             continue
 
-        style_name = str(row[7] or "").strip()  # H: STYLE NAME
-        color = str(row[8] or "").strip()  # I: COLOR
-        pcs = row[9]  # J: PCS
-        supplier = str(row[10] or "").strip()  # K: 생산처
-        staff = str(row[11] or "").strip() if len(row) > 11 else ""  # L: 담당자
-        supplier_eta = fmt_date(row[12]) if len(row) > 12 else None  # M: 협력사 협의납기
-        eta = fmt_date(row[26]) if len(row) > 26 else None  # AA: 입고예정일
-        actual_dt = fmt_date(row[27]) if len(row) > 27 else None  # AB: 실입고일
-        remark = str(row[33] or "").strip() if len(row) > 33 else ""  # AH: MD 납기 히스토리
-        spot = str(row[4] or "").strip() if len(row) > 4 else ""  # E: SPOT/RE-ORDER
-        item_code = str(row[29] or "").strip() if len(row) > 29 else ""  # AD: 복종
+        style_name = str(safe(row, col["style_name"]) or "").strip()
+        color = str(safe(row, col["color"]) or "").strip()
+        pcs = safe(row, col["pcs"])
+        supplier = str(safe(row, col["supplier"]) or "").strip()
+        staff = str(safe(row, col["staff"]) or "").strip()
+        supplier_eta = fmt_date(safe(row, col["supplier_eta"]))
+        eta = fmt_date(safe(row, col["eta"]))
+        actual_dt = fmt_date(safe(row, col["actual_dt"]))
+        remark = str(safe(row, col["remark"]) or "").strip()
+        spot = str(safe(row, col["spot"]) or "").strip()
+        item_code = str(safe(row, col["item_code"]) or "").strip()
 
         # PCS 정리
         try:
