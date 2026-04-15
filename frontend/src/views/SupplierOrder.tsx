@@ -13,26 +13,34 @@ interface CategoryRow {
   CATEGORY: string;
   STYLE_CNT: number;
   STOR_STYLE_CNT: number;
-  AC_STOR_AMT: number;
-  AC_STOR_QTY: number;
-  AC_SALE_AMT: number;
-  WEEK_SALE_AMT: number;
-  AC_ORD_AMT: number;
-  START_DT: string;
-  END_DT: string;
+  SKU_CNT: number;
+  STOR_SKU_CNT: number;
+  ORD_QTY: number;
+  STOR_QTY: number;
+  ORD_AMT: number;
+  STOR_AMT: number;
 }
 
-/** 표시용 행 */
+interface Metrics {
+  styles: number;
+  storStyles: number;
+  skus: number;
+  storSkus: number;
+  ordQty: number;
+  storQty: number;
+  ordAmt: number;
+  storAmt: number;
+}
+
 interface DisplayRow {
   label: string;
   indent: number;
   bold: boolean;
-  color?: string; // 강조색
-  prev: { styles: number; storAmt: number; saleAmt: number; saleRate: number; weekSale: number };
-  curr: { styles: number; storAmt: number; saleAmt: number; saleRate: number; weekSale: number };
+  color?: string;
+  prev: Metrics;
+  curr: Metrics;
 }
 
-// 카테고리 매핑: DB PRDT_KIND_NM → 표시명
 const CAT_LABEL: Record<string, string> = {
   Outer: "Outer",
   Inner: "Top",
@@ -45,32 +53,29 @@ const CAT_LABEL: Record<string, string> = {
 const RTW_CATS = ["Outer", "Inner", "Bottom", "Wear_etc"];
 const ACC_CATS = ["Bag", "Headwear"];
 
-function pct(a: number, b: number): string {
-  if (b === 0) return "+0%";
-  const v = ((a - b) / Math.abs(b)) * 100;
+function fmtGrowth(curr: number, prev: number): string {
+  if (prev === 0) return curr > 0 ? "+999%" : "+0%";
+  const v = ((curr - prev) / Math.abs(prev)) * 100;
   return v >= 0 ? `+${Math.round(v)}%` : `${Math.round(v)}%`;
 }
 
-function delta(a: number, b: number): string {
-  const d = a - b;
+function fmtDelta(curr: number, prev: number): string {
+  const d = curr - prev;
   return d >= 0 ? `+${d}` : `${d}`;
 }
 
-function pDelta(a: number, b: number): string {
-  const d = a - b;
-  const s = d >= 0 ? `+${d.toFixed(1)}p` : `${d.toFixed(1)}p`;
-  return s;
+function fmtRate(num: number, den: number): string {
+  if (den === 0) return "0%";
+  return `${((num / den) * 100).toFixed(0)}%`;
 }
 
 function fmtAmt(v: number): string {
-  return Math.round(v / 10000).toLocaleString(); // 백만원 단위
+  return (v / 1e8).toFixed(1);
 }
 
-function growthColor(val: number, base: number): string {
-  if (base === 0) return "#10b981";
-  const g = ((val - base) / Math.abs(base)) * 100;
-  if (g > 0) return "#10b981";
-  if (g < 0) return "#ef4444";
+function colorVal(curr: number, prev: number): string {
+  if (curr > prev) return "#10b981";
+  if (curr < prev) return "#ef4444";
   return "#64748b";
 }
 
@@ -86,7 +91,7 @@ export default function SupplierOrder({ brand, season }: Props) {
   useEffect(() => {
     const brandName = brand === "V" ? "duvetica" : "sergio";
     fetch(`/data/${brandName}_category_summary.json`)
-      .then((r) => r.ok ? r.json() : [])
+      .then((r) => (r.ok ? r.json() : []))
       .then((data: CategoryRow[]) => {
         setRawData(data);
         setLoading(false);
@@ -94,29 +99,26 @@ export default function SupplierOrder({ brand, season }: Props) {
       .catch(() => setLoading(false));
   }, [brand]);
 
-  // 데이터 집계
   const displayRows = useMemo((): DisplayRow[] => {
     if (!rawData.length) return [];
 
-    const aggregate = (sesn: string, genderFilter?: string, cats?: string[]) => {
-      const filtered = rawData.filter((r) => {
+    const agg = (sesn: string, gender?: string, cats?: string[]): Metrics => {
+      const f = rawData.filter((r) => {
         if (r.SESN !== sesn) return false;
-        if (genderFilter && r.GENDER !== genderFilter) return false;
+        if (gender && r.GENDER !== gender) return false;
         if (cats && !cats.includes(r.CATEGORY)) return false;
         return true;
       });
       return {
-        styles: filtered.reduce((s, r) => s + r.STOR_STYLE_CNT, 0),
-        storAmt: filtered.reduce((s, r) => s + Number(r.AC_STOR_AMT || 0), 0),
-        saleAmt: filtered.reduce((s, r) => s + Number(r.AC_SALE_AMT || 0), 0),
-        weekSale: filtered.reduce((s, r) => s + Number(r.WEEK_SALE_AMT || 0), 0),
-        saleRate: 0,
+        styles: f.reduce((s, r) => s + r.STYLE_CNT, 0),
+        storStyles: f.reduce((s, r) => s + r.STOR_STYLE_CNT, 0),
+        skus: f.reduce((s, r) => s + r.SKU_CNT, 0),
+        storSkus: f.reduce((s, r) => s + r.STOR_SKU_CNT, 0),
+        ordQty: f.reduce((s, r) => s + r.ORD_QTY, 0),
+        storQty: f.reduce((s, r) => s + r.STOR_QTY, 0),
+        ordAmt: f.reduce((s, r) => s + Number(r.ORD_AMT || 0), 0),
+        storAmt: f.reduce((s, r) => s + Number(r.STOR_AMT || 0), 0),
       };
-    };
-
-    const withRate = (d: ReturnType<typeof aggregate>) => {
-      d.saleRate = d.storAmt > 0 ? (d.saleAmt / d.storAmt) * 100 : 0;
-      return d;
     };
 
     const row = (label: string, indent: number, bold: boolean, color: string | undefined, cats?: string[], gender?: string): DisplayRow => ({
@@ -124,47 +126,32 @@ export default function SupplierOrder({ brand, season }: Props) {
       indent,
       bold,
       color,
-      prev: withRate(aggregate(prevSeason, gender, cats)),
-      curr: withRate(aggregate(season, gender, cats)),
+      prev: agg(prevSeason, gender, cats),
+      curr: agg(season, gender, cats),
     });
 
     const rows: DisplayRow[] = [];
-
-    // Total
     rows.push(row("Total", 0, true, undefined));
-
-    // RTW (의류)
     rows.push(row("RTW (의류)", 0, true, "#ef4444", RTW_CATS));
 
-    // Women
     rows.push(row("Women", 1, true, undefined, RTW_CATS, "여성"));
     for (const cat of RTW_CATS) {
-      const label = CAT_LABEL[cat] || cat;
-      const prevD = withRate(aggregate(prevSeason, "여성", [cat]));
-      const currD = withRate(aggregate(season, "여성", [cat]));
-      if (prevD.styles > 0 || currD.styles > 0) {
-        rows.push({ label, indent: 2, bold: false, prev: prevD, curr: currD });
-      }
+      const p = agg(prevSeason, "여성", [cat]);
+      const c = agg(season, "여성", [cat]);
+      if (p.styles > 0 || c.styles > 0) rows.push({ label: CAT_LABEL[cat] || cat, indent: 2, bold: false, prev: p, curr: c });
     }
 
-    // Men
     rows.push(row("Men", 1, true, undefined, RTW_CATS, "남성"));
     for (const cat of RTW_CATS) {
-      const label = CAT_LABEL[cat] || cat;
-      const prevD = withRate(aggregate(prevSeason, "남성", [cat]));
-      const currD = withRate(aggregate(season, "남성", [cat]));
-      if (prevD.styles > 0 || currD.styles > 0) {
-        rows.push({ label, indent: 2, bold: false, prev: prevD, curr: currD });
-      }
+      const p = agg(prevSeason, "남성", [cat]);
+      const c = agg(season, "남성", [cat]);
+      if (p.styles > 0 || c.styles > 0) rows.push({ label: CAT_LABEL[cat] || cat, indent: 2, bold: false, prev: p, curr: c });
     }
 
-    // Acc
     rows.push(row("Acc", 0, true, undefined, ACC_CATS));
 
     return rows;
   }, [rawData, season, prevSeason]);
-
-  const weekLabel = rawData.find((r) => r.SESN === season)?.START_DT?.slice(5) || "";
 
   if (loading) {
     return (
@@ -177,97 +164,98 @@ export default function SupplierOrder({ brand, season }: Props) {
     );
   }
 
+  // 셀 스타일
+  const numCell = "px-2 py-2 text-right font-mono tabular-nums text-[11px]";
+  const borderR = " border-r border-slate-200";
+
   return (
     <div className="space-y-4">
-      {/* 헤더 */}
       <div className="flex items-center gap-4">
         <div className="w-1.5 h-7 rounded-full bg-indigo-500" />
-        <h2 className="text-lg font-bold text-slate-800">카테고리별 발입출 분석</h2>
-        <span className="text-xs text-slate-400">(매출/입고/발주금액: 백만원, 판매율: %)</span>
+        <h2 className="text-lg font-bold text-slate-800">카테고리별 상세</h2>
       </div>
 
-      {/* 테이블 */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-[12px] border-collapse">
+          <table className="w-full text-[11px] border-collapse whitespace-nowrap">
             <thead>
               {/* 그룹 헤더 */}
-              <tr className="bg-slate-800 text-white">
-                <th rowSpan={2} className="px-4 py-2.5 text-left font-semibold text-[11px] border-r border-slate-700 min-w-[120px]">카테고리</th>
-                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-[11px] border-r border-slate-700">입고스타일수</th>
-                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-[11px] border-r border-slate-700">입고금액</th>
-                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-[11px] border-r border-slate-700">누계매출</th>
-                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-[11px]">판매율(금액)</th>
+              <tr className="bg-slate-100 border-b border-slate-200">
+                <th rowSpan={2} className="px-4 py-2.5 text-left font-bold text-slate-600 text-[10px] border-r border-slate-200 min-w-[110px] sticky left-0 bg-slate-100 z-20">카테고리</th>
+                <th colSpan={4} className="px-1 py-2 text-center font-bold text-[10px] text-blue-700 border-r border-slate-200 bg-blue-50/50">스타일수</th>
+                <th colSpan={4} className="px-1 py-2 text-center font-bold text-[10px] text-violet-700 border-r border-slate-200 bg-violet-50/50">SKU수</th>
+                <th colSpan={4} className="px-1 py-2 text-center font-bold text-[10px] text-emerald-700 border-r border-slate-200 bg-emerald-50/50">수량 (PCS)</th>
+                <th colSpan={4} className="px-1 py-2 text-center font-bold text-[10px] text-amber-700 bg-amber-50/50">금액 (억원)</th>
               </tr>
               {/* 서브 헤더 */}
-              <tr className="bg-slate-700 text-slate-300">
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{prevSeason}</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{season}</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium border-r border-slate-600">증감</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{prevSeason}</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{season}</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium border-r border-slate-600">성장률</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{prevSeason}</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{season}</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium border-r border-slate-600">성장률</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{prevSeason}</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{season}</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-medium">변화</th>
+              <tr className="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-500">
+                <th className="px-2 py-1.5 text-center font-semibold">{season}</th>
+                <th className="px-2 py-1.5 text-center font-semibold">{prevSeason}</th>
+                <th className="px-2 py-1.5 text-center font-semibold">증감</th>
+                <th className={`px-2 py-1.5 text-center font-semibold${borderR}`}>{season} 입고율</th>
+
+                <th className="px-2 py-1.5 text-center font-semibold">{season}</th>
+                <th className="px-2 py-1.5 text-center font-semibold">{prevSeason}</th>
+                <th className="px-2 py-1.5 text-center font-semibold">증감</th>
+                <th className={`px-2 py-1.5 text-center font-semibold${borderR}`}>{season} 입고율</th>
+
+                <th className="px-2 py-1.5 text-center font-semibold">{season}</th>
+                <th className="px-2 py-1.5 text-center font-semibold">{prevSeason}</th>
+                <th className="px-2 py-1.5 text-center font-semibold">성장률</th>
+                <th className={`px-2 py-1.5 text-center font-semibold${borderR}`}>입고율</th>
+
+                <th className="px-2 py-1.5 text-center font-semibold">{season}</th>
+                <th className="px-2 py-1.5 text-center font-semibold">{prevSeason}</th>
+                <th className="px-2 py-1.5 text-center font-semibold">성장률</th>
+                <th className="px-2 py-1.5 text-center font-semibold">입고율</th>
               </tr>
             </thead>
             <tbody>
               {displayRows.map((row, idx) => {
-                const styleDelta = row.curr.styles - row.prev.styles;
-                const storGrowth = pct(row.curr.storAmt, row.prev.storAmt);
-                const saleGrowth = pct(row.curr.saleAmt, row.prev.saleAmt);
-                const rateDelta = pDelta(row.curr.saleRate, row.prev.saleRate);
+                const c = row.curr;
+                const p = row.prev;
+                const bgClass = row.bold ? "bg-slate-50/80" : "";
 
                 return (
-                  <tr
-                    key={idx}
-                    className={`border-b border-slate-100 hover:bg-slate-50/50 ${row.bold ? "bg-slate-50/80" : ""}`}
-                  >
+                  <tr key={idx} className={`border-b border-slate-100 hover:bg-slate-50/50 ${bgClass}`}>
                     {/* 카테고리 */}
-                    <td className={`px-4 py-2 border-r border-slate-100 ${row.bold ? "font-bold" : ""}`}
+                    <td
+                      className={`px-4 py-2 border-r border-slate-200 sticky left-0 z-10 ${bgClass || "bg-white"} ${row.bold ? "font-bold" : ""}`}
                       style={{ paddingLeft: `${16 + row.indent * 16}px`, color: row.color || (row.bold ? "#1e293b" : "#475569") }}
                     >
                       {row.label}
                     </td>
 
-                    {/* 입고스타일수 */}
-                    <td className="px-2 py-2 text-center font-mono tabular-nums text-slate-600">{row.prev.styles}</td>
-                    <td className="px-2 py-2 text-center font-mono tabular-nums font-bold text-slate-800">{row.curr.styles}</td>
-                    <td className="px-2 py-2 text-center font-mono tabular-nums border-r border-slate-100"
-                      style={{ color: styleDelta > 0 ? "#10b981" : styleDelta < 0 ? "#ef4444" : "#64748b" }}
-                    >
-                      {delta(row.curr.styles, row.prev.styles)}
+                    {/* 스타일수 */}
+                    <td className={`${numCell} font-bold text-slate-800`}>{c.styles}</td>
+                    <td className={`${numCell} text-slate-500`}>{p.styles}</td>
+                    <td className={numCell} style={{ color: colorVal(c.styles, p.styles) }}>{fmtDelta(c.styles, p.styles)}</td>
+                    <td className={`${numCell}${borderR}`} style={{ color: c.storStyles < c.styles ? "#ef4444" : "#10b981" }}>
+                      {fmtRate(c.storStyles, c.styles)}
                     </td>
 
-                    {/* 입고금액 */}
-                    <td className="px-2 py-2 text-right font-mono tabular-nums text-slate-600">{fmtAmt(row.prev.storAmt)}</td>
-                    <td className="px-2 py-2 text-right font-mono tabular-nums font-bold text-slate-800">{fmtAmt(row.curr.storAmt)}</td>
-                    <td className="px-2 py-2 text-center font-mono tabular-nums border-r border-slate-100"
-                      style={{ color: growthColor(row.curr.storAmt, row.prev.storAmt) }}
-                    >
-                      {storGrowth}
+                    {/* SKU수 */}
+                    <td className={`${numCell} font-bold text-slate-800`}>{c.skus.toLocaleString()}</td>
+                    <td className={`${numCell} text-slate-500`}>{p.skus.toLocaleString()}</td>
+                    <td className={numCell} style={{ color: colorVal(c.skus, p.skus) }}>{fmtDelta(c.skus, p.skus)}</td>
+                    <td className={`${numCell}${borderR}`} style={{ color: c.storSkus < c.skus ? "#ef4444" : "#10b981" }}>
+                      {fmtRate(c.storSkus, c.skus)}
                     </td>
 
-                    {/* 누계매출 */}
-                    <td className="px-2 py-2 text-right font-mono tabular-nums text-slate-600">{fmtAmt(row.prev.saleAmt)}</td>
-                    <td className="px-2 py-2 text-right font-mono tabular-nums font-bold text-slate-800">{fmtAmt(row.curr.saleAmt)}</td>
-                    <td className="px-2 py-2 text-center font-mono tabular-nums border-r border-slate-100"
-                      style={{ color: growthColor(row.curr.saleAmt, row.prev.saleAmt) }}
-                    >
-                      {saleGrowth}
+                    {/* 수량(PCS) */}
+                    <td className={`${numCell} font-bold text-slate-800`}>{c.ordQty.toLocaleString()}</td>
+                    <td className={`${numCell} text-slate-500`}>{p.ordQty.toLocaleString()}</td>
+                    <td className={numCell} style={{ color: colorVal(c.ordQty, p.ordQty) }}>{fmtGrowth(c.ordQty, p.ordQty)}</td>
+                    <td className={`${numCell}${borderR}`} style={{ color: c.storQty < c.ordQty * 0.95 ? "#ef4444" : "#10b981" }}>
+                      {fmtRate(c.storQty, c.ordQty)}
                     </td>
 
-                    {/* 판매율 */}
-                    <td className="px-2 py-2 text-center font-mono tabular-nums text-slate-600">{row.prev.saleRate.toFixed(1)}%</td>
-                    <td className="px-2 py-2 text-center font-mono tabular-nums font-bold text-slate-800">{row.curr.saleRate.toFixed(1)}%</td>
-                    <td className="px-2 py-2 text-center font-mono tabular-nums"
-                      style={{ color: row.curr.saleRate - row.prev.saleRate >= 0 ? "#10b981" : "#ef4444" }}
-                    >
-                      {rateDelta}
+                    {/* 금액(억원) */}
+                    <td className={`${numCell} font-bold text-slate-800`}>{fmtAmt(c.ordAmt)}</td>
+                    <td className={`${numCell} text-slate-500`}>{fmtAmt(p.ordAmt)}</td>
+                    <td className={numCell} style={{ color: colorVal(c.ordAmt, p.ordAmt) }}>{fmtGrowth(c.ordAmt, p.ordAmt)}</td>
+                    <td className={numCell} style={{ color: c.storAmt < c.ordAmt * 0.95 ? "#ef4444" : "#10b981" }}>
+                      {fmtRate(c.storAmt, c.ordAmt)}
                     </td>
                   </tr>
                 );
