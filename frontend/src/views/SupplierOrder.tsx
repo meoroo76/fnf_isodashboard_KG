@@ -191,29 +191,33 @@ export default function SupplierOrder({ brand, season }: Props) {
               {/* 그룹 헤더 */}
               <tr className="bg-slate-100 border-b border-slate-200">
                 <th rowSpan={2} className="px-4 py-2.5 text-left font-bold text-slate-600 text-[10px] border-r border-slate-200 min-w-[110px] sticky left-0 bg-slate-100 z-20">카테고리</th>
-                <th colSpan={4} className="px-1 py-2 text-center font-bold text-[10px] text-blue-700 border-r border-slate-200 bg-blue-50/50">스타일수</th>
-                <th colSpan={4} className="px-1 py-2 text-center font-bold text-[10px] text-violet-700 border-r border-slate-200 bg-violet-50/50">SKU수</th>
-                <th colSpan={4} className="px-1 py-2 text-center font-bold text-[10px] text-emerald-700 border-r border-slate-200 bg-emerald-50/50">수량 (PCS)</th>
-                <th colSpan={4} className="px-1 py-2 text-center font-bold text-[10px] text-amber-700 bg-amber-50/50">금액 (억원)</th>
+                <th colSpan={5} className="px-1 py-2 text-center font-bold text-[10px] text-blue-700 border-r border-slate-200 bg-blue-50/50">스타일수</th>
+                <th colSpan={5} className="px-1 py-2 text-center font-bold text-[10px] text-violet-700 border-r border-slate-200 bg-violet-50/50">SKU수</th>
+                <th colSpan={5} className="px-1 py-2 text-center font-bold text-[10px] text-emerald-700 border-r border-slate-200 bg-emerald-50/50">수량 (PCS)</th>
+                <th colSpan={5} className="px-1 py-2 text-center font-bold text-[10px] text-amber-700 bg-amber-50/50">금액 (억원)</th>
               </tr>
               {/* 서브 헤더 */}
               <tr className="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-500">
-                <th className="px-2 py-1.5 text-center font-semibold">{season}</th>
+                <th className="px-2 py-1.5 text-center font-semibold bg-blue-50/30">{season}발주</th>
+                <th className="px-2 py-1.5 text-center font-semibold">{season}입고</th>
                 <th className="px-2 py-1.5 text-center font-semibold">{prevSeason}</th>
                 <th className="px-2 py-1.5 text-center font-semibold">증감</th>
-                <th className={`px-2 py-1.5 text-center font-semibold${borderR}`}>{season} 입고율</th>
+                <th className={`px-2 py-1.5 text-center font-semibold${borderR}`}>입고율</th>
 
-                <th className="px-2 py-1.5 text-center font-semibold">{season}</th>
+                <th className="px-2 py-1.5 text-center font-semibold bg-violet-50/30">{season}발주</th>
+                <th className="px-2 py-1.5 text-center font-semibold">{season}입고</th>
                 <th className="px-2 py-1.5 text-center font-semibold">{prevSeason}</th>
                 <th className="px-2 py-1.5 text-center font-semibold">증감</th>
-                <th className={`px-2 py-1.5 text-center font-semibold${borderR}`}>{season} 입고율</th>
+                <th className={`px-2 py-1.5 text-center font-semibold${borderR}`}>입고율</th>
 
-                <th className="px-2 py-1.5 text-center font-semibold">{season}</th>
+                <th className="px-2 py-1.5 text-center font-semibold bg-emerald-50/30">{season}발주</th>
+                <th className="px-2 py-1.5 text-center font-semibold">{season}입고</th>
                 <th className="px-2 py-1.5 text-center font-semibold">{prevSeason}</th>
                 <th className="px-2 py-1.5 text-center font-semibold">성장률</th>
                 <th className={`px-2 py-1.5 text-center font-semibold${borderR}`}>입고율</th>
 
-                <th className="px-2 py-1.5 text-center font-semibold">{season}</th>
+                <th className="px-2 py-1.5 text-center font-semibold bg-amber-50/30">{season}발주</th>
+                <th className="px-2 py-1.5 text-center font-semibold">{season}입고</th>
                 <th className="px-2 py-1.5 text-center font-semibold">{prevSeason}</th>
                 <th className="px-2 py-1.5 text-center font-semibold">성장률</th>
                 <th className="px-2 py-1.5 text-center font-semibold">입고율</th>
@@ -235,32 +239,36 @@ export default function SupplierOrder({ brand, season }: Props) {
                       {row.label}
                     </td>
 
-                    {/* 스타일수 */}
+                    {/* 스타일수: 26S발주 | 26S입고 | 25S | 증감 | 입고율 */}
                     <td className={`${numCell} font-bold text-slate-800`}>{c.styles}</td>
+                    <td className={`${numCell} text-emerald-600`}>{c.storStyles}</td>
                     <td className={`${numCell} text-slate-500`}>{p.styles}</td>
                     <td className={numCell} style={{ color: colorVal(c.styles, p.styles) }}>{fmtDelta(c.styles, p.styles)}</td>
                     <td className={`${numCell}${borderR}`} style={{ color: c.storStyles < c.styles ? "#ef4444" : "#10b981" }}>
                       {fmtRate(c.storStyles, c.styles)}
                     </td>
 
-                    {/* SKU수 */}
+                    {/* SKU수: 26S발주 | 26S입고 | 25S | 증감 | 입고율 */}
                     <td className={`${numCell} font-bold text-slate-800`}>{c.skus.toLocaleString()}</td>
+                    <td className={`${numCell} text-emerald-600`}>{c.storSkus.toLocaleString()}</td>
                     <td className={`${numCell} text-slate-500`}>{p.skus.toLocaleString()}</td>
                     <td className={numCell} style={{ color: colorVal(c.skus, p.skus) }}>{fmtDelta(c.skus, p.skus)}</td>
                     <td className={`${numCell}${borderR}`} style={{ color: c.storSkus < c.skus ? "#ef4444" : "#10b981" }}>
                       {fmtRate(c.storSkus, c.skus)}
                     </td>
 
-                    {/* 수량(PCS) */}
+                    {/* 수량(PCS): 26S발주 | 26S입고 | 25S | 성장률 | 입고율 */}
                     <td className={`${numCell} font-bold text-slate-800`}>{c.ordQty.toLocaleString()}</td>
+                    <td className={`${numCell} text-emerald-600`}>{c.storQty.toLocaleString()}</td>
                     <td className={`${numCell} text-slate-500`}>{p.ordQty.toLocaleString()}</td>
                     <td className={numCell} style={{ color: colorVal(c.ordQty, p.ordQty) }}>{fmtGrowth(c.ordQty, p.ordQty)}</td>
                     <td className={`${numCell}${borderR}`} style={{ color: c.storQty < c.ordQty * 0.95 ? "#ef4444" : "#10b981" }}>
                       {fmtRate(c.storQty, c.ordQty)}
                     </td>
 
-                    {/* 금액(억원) */}
+                    {/* 금액(억원): 26S발주 | 26S입고 | 25S | 성장률 | 입고율 */}
                     <td className={`${numCell} font-bold text-slate-800`}>{fmtAmt(c.ordAmt)}</td>
+                    <td className={`${numCell} text-emerald-600`}>{fmtAmt(c.storAmt)}</td>
                     <td className={`${numCell} text-slate-500`}>{fmtAmt(p.ordAmt)}</td>
                     <td className={numCell} style={{ color: colorVal(c.ordAmt, p.ordAmt) }}>{fmtGrowth(c.ordAmt, p.ordAmt)}</td>
                     <td className={numCell} style={{ color: c.storAmt < c.ordAmt * 0.95 ? "#ef4444" : "#10b981" }}>
