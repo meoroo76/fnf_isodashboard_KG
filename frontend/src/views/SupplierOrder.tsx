@@ -68,6 +68,7 @@ export default function SupplierOrder({ brand, season }: Props) {
   // 필터 상태
   const [selSuppliers, setSelSuppliers] = useState<Set<string>>(new Set());
   const [selStaff, setSelStaff] = useState<Set<string>>(new Set());
+  const [staffSupplierMap, setStaffSupplierMap] = useState<Record<string, string[]>>({});
 
   const prevSeason = useMemo(() => {
     const y = parseInt(season.slice(0, 2));
@@ -77,10 +78,15 @@ export default function SupplierOrder({ brand, season }: Props) {
   useEffect(() => {
     setLoading(true);
 
-    // stylemaster CSV fetch
+    // stylemaster + staff-supplier map
     const loadStyleMap = fetch("/data/stylemaster.json")
       .then((r) => (r.ok ? r.json() : {}))
       .then((map: Record<string, StyleInfo>) => setStyleMap(map))
+      .catch(() => {});
+
+    fetch("/data/staff_supplier_map.json")
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((map: Record<string, string[]>) => setStaffSupplierMap(map))
       .catch(() => {});
 
     Promise.all([
@@ -219,6 +225,31 @@ export default function SupplierOrder({ brand, season }: Props) {
     setter(next);
   };
 
+  // 담당자 토글 시 해당 협력사 자동 선택/해제
+  const toggleStaff = (staff: string) => {
+    const nextStaff = new Set(selStaff);
+    const nextSuppliers = new Set(selSuppliers);
+    const linkedSuppliers = staffSupplierMap[staff] || [];
+
+    if (nextStaff.has(staff)) {
+      // 해제: 해당 담당자의 협력사 제거 (다른 선택된 담당자의 협력사는 유지)
+      nextStaff.delete(staff);
+      linkedSuppliers.forEach((s) => {
+        const stillNeeded = [...nextStaff].some((otherStaff) =>
+          (staffSupplierMap[otherStaff] || []).includes(s)
+        );
+        if (!stillNeeded) nextSuppliers.delete(s);
+      });
+    } else {
+      // 선택: 해당 담당자의 협력사 추가
+      nextStaff.add(staff);
+      linkedSuppliers.forEach((s) => nextSuppliers.add(s));
+    }
+
+    setSelStaff(nextStaff);
+    setSelSuppliers(nextSuppliers);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -277,7 +308,7 @@ export default function SupplierOrder({ brand, season }: Props) {
             {filterOptions.staffList.map((s) => (
               <button
                 key={s}
-                onClick={() => toggleSet(selStaff, s, setSelStaff)}
+                onClick={() => toggleStaff(s)}
                 className={`px-2.5 py-1 rounded text-[10px] font-medium transition-all ${
                   selStaff.has(s)
                     ? "bg-emerald-500 text-white shadow-sm"
@@ -288,7 +319,7 @@ export default function SupplierOrder({ brand, season }: Props) {
               </button>
             ))}
             {selStaff.size > 0 && (
-              <button onClick={() => setSelStaff(new Set())} className="px-2 py-1 text-[10px] text-red-400 hover:text-red-600 font-medium">
+              <button onClick={() => { setSelStaff(new Set()); setSelSuppliers(new Set()); }} className="px-2 py-1 text-[10px] text-red-400 hover:text-red-600 font-medium">
                 전체 ×
               </button>
             )}
