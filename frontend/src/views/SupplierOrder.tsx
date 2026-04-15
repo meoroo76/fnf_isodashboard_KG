@@ -11,7 +11,6 @@ interface CategoryRow {
   SESN: string;
   GENDER: string;
   CATEGORY: string;
-  IS_DOWN: string; // "Y" or "N"
   STYLE_CNT: number;
   STOR_STYLE_CNT: number;
   SKU_CNT: number;
@@ -42,18 +41,10 @@ interface DisplayRow {
   curr: Metrics;
 }
 
-const CAT_LABEL: Record<string, string> = {
-  Outer: "Outer",
-  Inner: "Top",
-  Bottom: "Bottom",
-  Bag: "Bag",
-  Headwear: "Hat",
-  Wear_etc: "Etc",
-};
-
-const RTW_CATS = ["Outer", "Inner", "Bottom", "Wear_etc"];
-const ACC_CATS = ["Bag", "Headwear"];
-const DOWN_CATS = ["Outer"]; // Down은 Outer 중 IS_DOWN=Y
+// stylemaster CSV 기준 카테고리
+const RTW_CATS = ["down", "outer", "top", "bottom"];
+const ACC_CATS = ["acc"];
+const ETC_CATS = ["etc"];
 
 function fmtGrowth(curr: number, prev: number): string {
   if (prev === 0) return curr > 0 ? "+999%" : "+0%";
@@ -104,13 +95,11 @@ export default function SupplierOrder({ brand, season }: Props) {
   const displayRows = useMemo((): DisplayRow[] => {
     if (!rawData.length) return [];
 
-    const agg = (sesn: string, gender?: string, cats?: string[], isDown?: boolean): Metrics => {
+    const agg = (sesn: string, gender?: string, cats?: string[]): Metrics => {
       const f = rawData.filter((r) => {
         if (r.SESN !== sesn) return false;
         if (gender && r.GENDER !== gender) return false;
         if (cats && !cats.includes(r.CATEGORY)) return false;
-        if (isDown === true && r.IS_DOWN !== "Y") return false;
-        if (isDown === false && r.IS_DOWN === "Y") return false;
         return true;
       });
       return {
@@ -125,37 +114,33 @@ export default function SupplierOrder({ brand, season }: Props) {
       };
     };
 
-    const mkRow = (label: string, indent: number, bold: boolean, color: string | undefined, cats?: string[], gender?: string, isDown?: boolean): DisplayRow => ({
+    const mkRow = (label: string, indent: number, bold: boolean, color: string | undefined, cats?: string[], gender?: string): DisplayRow => ({
       label,
       indent,
       bold,
       color,
-      prev: agg(prevSeason, gender, cats, isDown),
-      curr: agg(season, gender, cats, isDown),
+      prev: agg(prevSeason, gender, cats),
+      curr: agg(season, gender, cats),
     });
 
     const addGenderBlock = (rows: DisplayRow[], label: string, gender: string) => {
       rows.push(mkRow(label, 1, true, undefined, RTW_CATS, gender));
-      // Down (Outer 중 IS_DOWN=Y)
-      rows.push(mkRow("Down", 2, false, undefined, DOWN_CATS, gender, true));
-      // Outer (IS_DOWN=N만)
-      rows.push(mkRow("Outer", 2, false, undefined, ["Outer"], gender, false));
-      // Top (Inner)
-      const pTop = agg(prevSeason, gender, ["Inner"]);
-      const cTop = agg(season, gender, ["Inner"]);
-      if (pTop.styles > 0 || cTop.styles > 0) rows.push({ label: "Top", indent: 2, bold: false, prev: pTop, curr: cTop });
-      // Bottom
-      const pBtm = agg(prevSeason, gender, ["Bottom"]);
-      const cBtm = agg(season, gender, ["Bottom"]);
-      if (pBtm.styles > 0 || cBtm.styles > 0) rows.push({ label: "Bottom", indent: 2, bold: false, prev: pBtm, curr: cBtm });
+      for (const cat of RTW_CATS) {
+        const p = agg(prevSeason, gender, [cat]);
+        const c = agg(season, gender, [cat]);
+        if (p.styles > 0 || c.styles > 0) {
+          const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);
+          rows.push({ label: catLabel, indent: 2, bold: false, prev: p, curr: c });
+        }
+      }
     };
 
     const rows: DisplayRow[] = [];
     rows.push(mkRow("Total", 0, true, undefined));
     rows.push(mkRow("RTW (의류)", 0, true, "#ef4444", RTW_CATS));
 
-    addGenderBlock(rows, "Women", "여성");
-    addGenderBlock(rows, "Men", "남성");
+    addGenderBlock(rows, "Women", "women");
+    addGenderBlock(rows, "Men", "men");
 
     rows.push(mkRow("Acc", 0, true, undefined, ACC_CATS));
 
