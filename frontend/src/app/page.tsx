@@ -18,6 +18,7 @@ import SupplierScorecard from "@/views/SupplierScorecard";
 import SupplierRanking from "@/views/SupplierRanking";
 import SupplierDetail from "@/views/SupplierDetail";
 import SupplierEval from "@/views/SupplierEval";
+import SupplierOrder from "@/views/SupplierOrder";
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType<{ brand: string; season: string }>> = {
   // 생산
@@ -36,6 +37,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<{ brand: string; seaso
   qc_results: QcResults,
   voc_analysis: VocAnalysis,
   // 협력사
+  supplier_order: SupplierOrder,
   scorecard: SupplierScorecard,
   ranking: SupplierRanking,
   detail_panel: SupplierDetail,

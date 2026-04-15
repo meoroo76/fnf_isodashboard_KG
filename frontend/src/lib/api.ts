@@ -137,6 +137,23 @@ export interface InboundDaily {
   QTY: number;
 }
 
+export interface ScheduleRow {
+  season: string;
+  status: string;
+  style_no: string;
+  style_name: string;
+  color: string;
+  pcs: number;
+  supplier: string;
+  staff: string;
+  spot: string;
+  supplier_eta: string | null;
+  eta: string | null;
+  actual_dt: string | null;
+  remark: string;
+  item_code: string;
+}
+
 export interface SeasonSale {
   [key: string]: number | string;
 }
@@ -189,6 +206,17 @@ export const api = {
       if (!res.ok) return { data: [], count: 0 };
       const raw = await res.json();
       const rows = parseRows(raw) as OrderInbound[];
+      return { data: rows, count: rows.length };
+    } catch { return { data: [], count: 0 }; }
+  },
+
+  getSchedule: async (brdCd: string): Promise<ApiListResponse<ScheduleRow>> => {
+    const filename = `${brandFile(brdCd)}_schedule.json`;
+    try {
+      const res = await fetch(`/data/${filename}`);
+      if (!res.ok) return { data: [], count: 0 };
+      const raw = await res.json();
+      const rows = parseRows(raw) as ScheduleRow[];
       return { data: rows, count: rows.length };
     } catch { return { data: [], count: 0 }; }
   },
