@@ -259,6 +259,84 @@ def update_voc(brd_cd: str, brand_name: str):
         save_json(rows, f"{brand_name}_voc.json")
 
 
+def update_season_sale(brd_cd: str, brand_name: str, season: str):
+    """시즌 발입출판재 업데이트 (판매금액 KPI용)"""
+    year = 2000 + int(season[:2])
+    is_fw = season.upper().endswith("F")
+    prev_season = f"{int(season[:2]) - 1:02d}{season[2:]}"
+
+    # 날짜 계산 (동요일 기준)
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    # 전주 월~일
+    this_monday = today - timedelta(days=(today.weekday()))
+    last_monday = this_monday - timedelta(days=7)
+    last_sunday = last_monday + timedelta(days=6)
+    # 전년 동요일
+    prev_last_monday = last_monday - timedelta(days=364)
+    prev_last_sunday = last_sunday - timedelta(days=364)
+    prev_yesterday = yesterday - timedelta(days=364)
+
+    # 전년 시즌 마감일 조회
+    cmd = [
+        "dcs-ai-cli", "fetch",
+        "--endpoint", f"/api/v1/common/date_util/sale_end_date_product_season?sesn={prev_season}",
+        "--name", f"{brand_name}_season_end",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        pattern = str(TMPDIR / f"{brand_name}_season_end_*.json")
+        files = sorted(glob.glob(pattern))
+        if files:
+            raw = json.loads(Path(files[-1]).read_text(encoding="utf-8"))
+            season_end = raw.get("data", {}).get("data", "")
+            if isinstance(season_end, dict):
+                season_end = season_end.get("data", "")
+        else:
+            season_end = ""
+    except Exception:
+        season_end = ""
+
+    if not season_end:
+        # fallback: SS=8/31, FW=2/28
+        season_end = f"{year}-02-28" if is_fw else f"{year - 1 + 1}-08-31"
+
+    body = {
+        "selectors": [
+            {"system_field_name": "BRD_CD"},
+        ],
+        "filters": [
+            {"system_code": brd_cd, "system_field_name": "BRD_CD"},
+        ],
+        "current_season_period_filters": {
+            "sesn": season,
+            "term_start_dt": last_monday.strftime("%Y-%m-%d"),
+            "term_end_dt": last_sunday.strftime("%Y-%m-%d"),
+            "acum_end_dt": yesterday.strftime("%Y-%m-%d"),
+        },
+        "previous_season_period_filters": {
+            "sesn": prev_season,
+            "term_start_dt": prev_last_monday.strftime("%Y-%m-%d"),
+            "term_end_dt": prev_last_sunday.strftime("%Y-%m-%d"),
+            "acum_end_dt": prev_yesterday.strftime("%Y-%m-%d"),
+            "season_end_dt": season_end,
+        },
+        "meta_info": {
+            "data_size_only": False,
+            "data_type": "list",
+            "requested_record_rows": 20000,
+        },
+    }
+    name = f"{brand_name}_season_sale"
+    filepath = call_cli(
+        "/api/v1/hq/sales_analysis/product/season_wear_order_stor_sale_stock",
+        "POST", body, name,
+    )
+    if filepath:
+        rows = extract_data(filepath)
+        save_json(rows, f"{brand_name}_season_sale.json")
+
+
 def update_inbound_booking(brd_cd: str, brand_name: str, season: str):
     """물류 입고 부킹 현황 업데이트 (시즌 전체 기간)"""
     # SS 시즌: 전년 12/1 ~ 오늘, FW 시즌: 당해 7/1 ~ 오늘
@@ -385,7 +463,7 @@ def main():
     parser = argparse.ArgumentParser(description="대시보드 데이터 자동 업데이트")
     parser.add_argument("--no-push", action="store_true", help="git push 생략")
     parser.add_argument("--dry-run", action="store_true", help="API 호출 없이 구조만 확인")
-    parser.add_argument("--only", choices=["order", "claims", "cost", "voc", "images", "inbound"], help="특정 데이터만 업데이트")
+    parser.add_argument("--only", choices=["order", "claims", "cost", "voc", "images", "inbound", "sale"], help="특정 데이터만 업데이트")
     args = parser.parse_args()
 
     log("=" * 60)
@@ -430,9 +508,14 @@ def main():
             log(f"\n[5] 물류 입고 부킹 ({CURRENT_SEASON})")
             update_inbound_booking(brd_cd, brand_name, CURRENT_SEASON)
 
-    # 6. 이미지 매핑 — 전 브랜드 통합
+        # 6. 시즌 판매 데이터 — 발입출판재
+        if not args.only or args.only == "sale":
+            log(f"\n[6] 시즌 판매 ({CURRENT_SEASON})")
+            update_season_sale(brd_cd, brand_name, CURRENT_SEASON)
+
+    # 7. 이미지 매핑 — 전 브랜드 통합
     if not args.only or args.only == "images":
-        log(f"\n[6] 제품 이미지 매핑")
+        log(f"\n[7] 제품 이미지 매핑")
         update_product_images()
 
     # ── git commit & push ──
