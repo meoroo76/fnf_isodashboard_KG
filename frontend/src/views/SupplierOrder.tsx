@@ -1,158 +1,170 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { api, OrderInbound, ScheduleRow } from "@/lib/api";
 
 interface Props {
   brand: string;
   season: string;
 }
 
-/** PO 단위 집계 행 */
-interface PoRow {
-  po_no: string;
-  style_count: number;
-  styles: string[];
-  colors: string[];
-  ord_qty: number;
-  stor_qty: number;
-  supplier: string;
-  item_group: string;
-  eta: string | null; // 엑셀 입고예정일
-  remark: string; // 엑셀 비고
-  staff: string;
-  spot: string;
+interface CategoryRow {
+  SESN: string;
+  GENDER: string;
+  CATEGORY: string;
+  STYLE_CNT: number;
+  STOR_STYLE_CNT: number;
+  AC_STOR_AMT: number;
+  AC_STOR_QTY: number;
+  AC_SALE_AMT: number;
+  WEEK_SALE_AMT: number;
+  AC_ORD_AMT: number;
+  START_DT: string;
+  END_DT: string;
+}
+
+/** 표시용 행 */
+interface DisplayRow {
+  label: string;
+  indent: number;
+  bold: boolean;
+  color?: string; // 강조색
+  prev: { styles: number; storAmt: number; saleAmt: number; saleRate: number; weekSale: number };
+  curr: { styles: number; storAmt: number; saleAmt: number; saleRate: number; weekSale: number };
+}
+
+// 카테고리 매핑: DB PRDT_KIND_NM → 표시명
+const CAT_LABEL: Record<string, string> = {
+  Outer: "Outer",
+  Inner: "Top",
+  Bottom: "Bottom",
+  Bag: "Bag",
+  Headwear: "Hat",
+  Wear_etc: "Etc",
+};
+
+const RTW_CATS = ["Outer", "Inner", "Bottom", "Wear_etc"];
+const ACC_CATS = ["Bag", "Headwear"];
+
+function pct(a: number, b: number): string {
+  if (b === 0) return "+0%";
+  const v = ((a - b) / Math.abs(b)) * 100;
+  return v >= 0 ? `+${Math.round(v)}%` : `${Math.round(v)}%`;
+}
+
+function delta(a: number, b: number): string {
+  const d = a - b;
+  return d >= 0 ? `+${d}` : `${d}`;
+}
+
+function pDelta(a: number, b: number): string {
+  const d = a - b;
+  const s = d >= 0 ? `+${d.toFixed(1)}p` : `${d.toFixed(1)}p`;
+  return s;
+}
+
+function fmtAmt(v: number): string {
+  return Math.round(v / 10000).toLocaleString(); // 백만원 단위
+}
+
+function growthColor(val: number, base: number): string {
+  if (base === 0) return "#10b981";
+  const g = ((val - base) / Math.abs(base)) * 100;
+  if (g > 0) return "#10b981";
+  if (g < 0) return "#ef4444";
+  return "#64748b";
 }
 
 export default function SupplierOrder({ brand, season }: Props) {
-  const [orderData, setOrderData] = useState<OrderInbound[]>([]);
-  const [schedule, setSchedule] = useState<ScheduleRow[]>([]);
+  const [rawData, setRawData] = useState<CategoryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 필터 상태
-  const [selectedSuppliers, setSelectedSuppliers] = useState<Set<string>>(new Set());
-  const [selectedStaff, setSelectedStaff] = useState<Set<string>>(new Set());
-  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-  const [inboundFilter, setInboundFilter] = useState<"all" | "inbound" | "pending">("all");
+  const prevSeason = useMemo(() => {
+    const y = parseInt(season.slice(0, 2));
+    return `${(y - 1).toString().padStart(2, "0")}${season.slice(2)}`;
+  }, [season]);
 
   useEffect(() => {
-    setLoading(true);
-    Promise.all([
-      api.getOrderInbound(brand, season),
-      api.getSchedule(brand),
-    ]).then(([order, sched]) => {
-      setOrderData(order.data);
-      setSchedule(sched.data.filter((r) => r.season === season.replace("S", "S").replace("F", "F")));
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [brand, season]);
+    const brandName = brand === "V" ? "duvetica" : "sergio";
+    fetch(`/data/${brandName}_category_summary.json`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: CategoryRow[]) => {
+        setRawData(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [brand]);
 
-  // 엑셀 스케줄 맵: STYLE_NO → { eta, remark, staff, supplier, spot, item_code }
-  const scheduleMap = useMemo(() => {
-    const map = new Map<string, { eta: string | null; remark: string; staff: string; supplier: string; spot: string; item_code: string }>();
-    schedule.forEach((r) => {
-      // 스타일별로 첫 번째 레코드의 정보 사용 (ETA, 비고 등)
-      if (!map.has(r.style_no)) {
-        map.set(r.style_no, {
-          eta: r.eta,
-          remark: r.remark,
-          staff: r.staff,
-          supplier: r.supplier,
-          spot: r.spot,
-          item_code: r.item_code,
-        });
-      }
-    });
-    return map;
-  }, [schedule]);
+  // 데이터 집계
+  const displayRows = useMemo((): DisplayRow[] => {
+    if (!rawData.length) return [];
 
-  // PO 단위 집계
-  const poRows = useMemo((): PoRow[] => {
-    if (!orderData.length) return [];
-
-    const map = new Map<string, {
-      styles: Set<string>;
-      colors: Set<string>;
-      ord_qty: number;
-      stor_qty: number;
-      supplier: string;
-      item_group: string;
-    }>();
-
-    orderData.forEach((r) => {
-      const po = r.PO_NO;
-      if (!po) return;
-      const cur = map.get(po) || {
-        styles: new Set<string>(),
-        colors: new Set<string>(),
-        ord_qty: 0,
-        stor_qty: 0,
-        supplier: r.MFAC_COMPY_NM || "-",
-        item_group: r.ITEM_GROUP || "-",
-      };
-      cur.styles.add(r.PRDT_CD);
-      if (r.COLOR_CD) cur.colors.add(String(r.COLOR_CD));
-      cur.ord_qty += r.ORD_QTY || 0;
-      cur.stor_qty += r.STOR_QTY || 0;
-      map.set(po, cur);
-    });
-
-    return [...map.entries()].map(([po, v]) => {
-      const styleList = [...v.styles];
-      // 품번에서 PART_CD 추출 (앞 4자 제거)
-      const partCd = styleList[0]?.replace(/^[A-Z]\d{2}[A-Z]/, "") || "";
-      const schedInfo = scheduleMap.get(partCd);
-
-      // 입고수량 없을 때 엑셀 ETA 사용
-      const eta = v.stor_qty === 0 && schedInfo ? schedInfo.eta : null;
-      const remark = schedInfo?.remark || "";
-      const staff = schedInfo?.staff || "";
-      const spot = schedInfo?.spot || "";
-
+    const aggregate = (sesn: string, genderFilter?: string, cats?: string[]) => {
+      const filtered = rawData.filter((r) => {
+        if (r.SESN !== sesn) return false;
+        if (genderFilter && r.GENDER !== genderFilter) return false;
+        if (cats && !cats.includes(r.CATEGORY)) return false;
+        return true;
+      });
       return {
-        po_no: po,
-        style_count: v.styles.size,
-        styles: styleList,
-        colors: [...v.colors].sort(),
-        ord_qty: v.ord_qty,
-        stor_qty: v.stor_qty,
-        supplier: v.supplier,
-        item_group: v.item_group,
-        eta,
-        remark,
-        staff,
-        spot,
+        styles: filtered.reduce((s, r) => s + r.STOR_STYLE_CNT, 0),
+        storAmt: filtered.reduce((s, r) => s + Number(r.AC_STOR_AMT || 0), 0),
+        saleAmt: filtered.reduce((s, r) => s + Number(r.AC_SALE_AMT || 0), 0),
+        weekSale: filtered.reduce((s, r) => s + Number(r.WEEK_SALE_AMT || 0), 0),
+        saleRate: 0,
       };
-    }).sort((a, b) => a.supplier.localeCompare(b.supplier) || a.po_no.localeCompare(b.po_no));
-  }, [orderData, scheduleMap]);
+    };
 
-  // 필터 옵션 추출
-  const filterOptions = useMemo(() => {
-    const suppliers = [...new Set(poRows.map((r) => r.supplier))].sort();
-    const staffList = [...new Set(schedule.map((r) => r.staff).filter((s) => /[가-힣]/.test(s)))].sort();
-    const items = [...new Set(poRows.map((r) => r.item_group))].sort();
-    return { suppliers, staffList, items };
-  }, [poRows, schedule]);
+    const withRate = (d: ReturnType<typeof aggregate>) => {
+      d.saleRate = d.storAmt > 0 ? (d.saleAmt / d.storAmt) * 100 : 0;
+      return d;
+    };
 
-  // 필터 적용
-  const filteredRows = useMemo(() => {
-    return poRows.filter((r) => {
-      if (selectedSuppliers.size > 0 && !selectedSuppliers.has(r.supplier)) return false;
-      if (selectedStaff.size > 0 && !selectedStaff.has(r.staff)) return false;
-      if (selectedItems.size > 0 && !selectedItems.has(r.item_group)) return false;
-      if (inboundFilter === "inbound" && r.stor_qty === 0) return false;
-      if (inboundFilter === "pending" && r.stor_qty > 0) return false;
-      return true;
+    const row = (label: string, indent: number, bold: boolean, color: string | undefined, cats?: string[], gender?: string): DisplayRow => ({
+      label,
+      indent,
+      bold,
+      color,
+      prev: withRate(aggregate(prevSeason, gender, cats)),
+      curr: withRate(aggregate(season, gender, cats)),
     });
-  }, [poRows, selectedSuppliers, selectedStaff, selectedItems, inboundFilter]);
 
-  // 토글 헬퍼
-  const toggleSet = (set: Set<string>, val: string, setter: (s: Set<string>) => void) => {
-    const next = new Set(set);
-    if (next.has(val)) next.delete(val);
-    else next.add(val);
-    setter(next);
-  };
+    const rows: DisplayRow[] = [];
+
+    // Total
+    rows.push(row("Total", 0, true, undefined));
+
+    // RTW (의류)
+    rows.push(row("RTW (의류)", 0, true, "#ef4444", RTW_CATS));
+
+    // Women
+    rows.push(row("Women", 1, true, undefined, RTW_CATS, "여성"));
+    for (const cat of RTW_CATS) {
+      const label = CAT_LABEL[cat] || cat;
+      const prevD = withRate(aggregate(prevSeason, "여성", [cat]));
+      const currD = withRate(aggregate(season, "여성", [cat]));
+      if (prevD.styles > 0 || currD.styles > 0) {
+        rows.push({ label, indent: 2, bold: false, prev: prevD, curr: currD });
+      }
+    }
+
+    // Men
+    rows.push(row("Men", 1, true, undefined, RTW_CATS, "남성"));
+    for (const cat of RTW_CATS) {
+      const label = CAT_LABEL[cat] || cat;
+      const prevD = withRate(aggregate(prevSeason, "남성", [cat]));
+      const currD = withRate(aggregate(season, "남성", [cat]));
+      if (prevD.styles > 0 || currD.styles > 0) {
+        rows.push({ label, indent: 2, bold: false, prev: prevD, curr: currD });
+      }
+    }
+
+    // Acc
+    rows.push(row("Acc", 0, true, undefined, ACC_CATS));
+
+    return rows;
+  }, [rawData, season, prevSeason]);
+
+  const weekLabel = rawData.find((r) => r.SESN === season)?.START_DT?.slice(5) || "";
 
   if (loading) {
     return (
@@ -165,191 +177,101 @@ export default function SupplierOrder({ brand, season }: Props) {
     );
   }
 
-  const totals = filteredRows.reduce(
-    (acc, r) => ({ ord: acc.ord + r.ord_qty, stor: acc.stor + r.stor_qty, styles: acc.styles + r.style_count }),
-    { ord: 0, stor: 0, styles: 0 },
-  );
-
   return (
-    <div className="space-y-6">
-      {/* 필터 바 */}
-      <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4">
-        {/* 입고/미입고 선택 */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-500 w-16">상태</span>
-          {(["all", "inbound", "pending"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setInboundFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                inboundFilter === f
-                  ? "bg-indigo-500 text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              {f === "all" ? "전체" : f === "inbound" ? "입고 완료" : "미입고"}
-            </button>
-          ))}
-          <span className="ml-auto text-xs text-slate-400">
-            {filteredRows.length}건 / {poRows.length}건
-          </span>
-        </div>
-
-        {/* 협력사 */}
-        <div className="flex items-start gap-2">
-          <span className="text-xs font-semibold text-slate-500 w-16 pt-1">협력사</span>
-          <div className="flex flex-wrap gap-1.5">
-            {filterOptions.suppliers.map((s) => (
-              <button
-                key={s}
-                onClick={() => toggleSet(selectedSuppliers, s, setSelectedSuppliers)}
-                className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                  selectedSuppliers.has(s)
-                    ? "bg-blue-500 text-white"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-            {selectedSuppliers.size > 0 && (
-              <button onClick={() => setSelectedSuppliers(new Set())} className="px-2 py-1 text-[10px] text-red-400 hover:text-red-600">초기화</button>
-            )}
-          </div>
-        </div>
-
-        {/* 담당자 */}
-        <div className="flex items-start gap-2">
-          <span className="text-xs font-semibold text-slate-500 w-16 pt-1">담당자</span>
-          <div className="flex flex-wrap gap-1.5">
-            {filterOptions.staffList.map((s) => (
-              <button
-                key={s}
-                onClick={() => toggleSet(selectedStaff, s, setSelectedStaff)}
-                className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                  selectedStaff.has(s)
-                    ? "bg-emerald-500 text-white"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-            {selectedStaff.size > 0 && (
-              <button onClick={() => setSelectedStaff(new Set())} className="px-2 py-1 text-[10px] text-red-400 hover:text-red-600">초기화</button>
-            )}
-          </div>
-        </div>
-
-        {/* 복종 */}
-        <div className="flex items-start gap-2">
-          <span className="text-xs font-semibold text-slate-500 w-16 pt-1">복종</span>
-          <div className="flex flex-wrap gap-1.5">
-            {filterOptions.items.map((s) => (
-              <button
-                key={s}
-                onClick={() => toggleSet(selectedItems, s, setSelectedItems)}
-                className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                  selectedItems.has(s)
-                    ? "bg-amber-500 text-white"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-            {selectedItems.size > 0 && (
-              <button onClick={() => setSelectedItems(new Set())} className="px-2 py-1 text-[10px] text-red-400 hover:text-red-600">초기화</button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 합계 */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-slate-100 px-4 py-3 text-center">
-          <div className="text-[10px] text-slate-400 uppercase">PO 건수</div>
-          <div className="text-xl font-bold text-slate-800">{filteredRows.length}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-100 px-4 py-3 text-center">
-          <div className="text-[10px] text-slate-400 uppercase">스타일수</div>
-          <div className="text-xl font-bold text-slate-800">{totals.styles}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-100 px-4 py-3 text-center">
-          <div className="text-[10px] text-slate-400 uppercase">발주수량</div>
-          <div className="text-xl font-bold text-slate-800">{totals.ord.toLocaleString()}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-100 px-4 py-3 text-center">
-          <div className="text-[10px] text-slate-400 uppercase">입고수량</div>
-          <div className="text-xl font-bold text-emerald-600">{totals.stor.toLocaleString()}</div>
-        </div>
+    <div className="space-y-4">
+      {/* 헤더 */}
+      <div className="flex items-center gap-4">
+        <div className="w-1.5 h-7 rounded-full bg-indigo-500" />
+        <h2 className="text-lg font-bold text-slate-800">카테고리별 발입출 분석</h2>
+        <span className="text-xs text-slate-400">(매출/입고/발주금액: 백만원, 판매율: %)</span>
       </div>
 
       {/* 테이블 */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-[12px]">
-            <thead className="sticky top-0 bg-slate-50 z-10">
-              <tr className="border-b border-slate-200">
-                <th className="text-left px-4 py-3 font-semibold text-slate-500 text-[10px] uppercase">PO</th>
-                <th className="text-center px-3 py-3 font-semibold text-slate-500 text-[10px] uppercase">STY</th>
-                <th className="text-left px-3 py-3 font-semibold text-slate-500 text-[10px] uppercase">칼라</th>
-                <th className="text-right px-3 py-3 font-semibold text-slate-500 text-[10px] uppercase">발주수량</th>
-                <th className="text-right px-3 py-3 font-semibold text-slate-500 text-[10px] uppercase">입고수량</th>
-                <th className="text-center px-3 py-3 font-semibold text-slate-500 text-[10px] uppercase">입고예정일</th>
-                <th className="text-left px-3 py-3 font-semibold text-slate-500 text-[10px] uppercase max-w-[200px]">비고</th>
+          <table className="w-full text-[12px] border-collapse">
+            <thead>
+              {/* 그룹 헤더 */}
+              <tr className="bg-slate-800 text-white">
+                <th rowSpan={2} className="px-4 py-2.5 text-left font-semibold text-[11px] border-r border-slate-700 min-w-[120px]">카테고리</th>
+                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-[11px] border-r border-slate-700">입고스타일수</th>
+                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-[11px] border-r border-slate-700">입고금액</th>
+                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-[11px] border-r border-slate-700">누계매출</th>
+                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-[11px]">판매율(금액)</th>
+              </tr>
+              {/* 서브 헤더 */}
+              <tr className="bg-slate-700 text-slate-300">
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{prevSeason}</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{season}</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium border-r border-slate-600">증감</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{prevSeason}</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{season}</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium border-r border-slate-600">성장률</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{prevSeason}</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{season}</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium border-r border-slate-600">성장률</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{prevSeason}</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium">{season}</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-medium">변화</th>
               </tr>
             </thead>
             <tbody>
-              {filteredRows.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-10 text-slate-400">해당 조건의 데이터 없음</td></tr>
-              ) : (
-                filteredRows.map((row, idx) => {
-                  const isComplete = row.stor_qty > 0 && row.stor_qty >= row.ord_qty;
-                  const isPartial = row.stor_qty > 0 && row.stor_qty < row.ord_qty;
-                  return (
-                    <tr
-                      key={idx}
-                      className={`border-b border-slate-50 hover:bg-indigo-50/30 transition-colors ${isComplete ? "bg-emerald-50/20" : ""}`}
+              {displayRows.map((row, idx) => {
+                const styleDelta = row.curr.styles - row.prev.styles;
+                const storGrowth = pct(row.curr.storAmt, row.prev.storAmt);
+                const saleGrowth = pct(row.curr.saleAmt, row.prev.saleAmt);
+                const rateDelta = pDelta(row.curr.saleRate, row.prev.saleRate);
+
+                return (
+                  <tr
+                    key={idx}
+                    className={`border-b border-slate-100 hover:bg-slate-50/50 ${row.bold ? "bg-slate-50/80" : ""}`}
+                  >
+                    {/* 카테고리 */}
+                    <td className={`px-4 py-2 border-r border-slate-100 ${row.bold ? "font-bold" : ""}`}
+                      style={{ paddingLeft: `${16 + row.indent * 16}px`, color: row.color || (row.bold ? "#1e293b" : "#475569") }}
                     >
-                      <td className="px-4 py-2.5">
-                        <div className="font-mono text-[11px] font-medium text-slate-800">{row.po_no}</div>
-                        <div className="text-[10px] text-slate-400">{row.supplier}</div>
-                      </td>
-                      <td className="px-3 py-2.5 text-center font-mono text-slate-700">{row.style_count}</td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex flex-wrap gap-0.5">
-                          {row.colors.map((c) => (
-                            <span key={c} className="inline-block px-1 py-0.5 bg-slate-100 rounded text-[9px] font-mono text-slate-600">{c}</span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-mono tabular-nums text-slate-700">{row.ord_qty.toLocaleString()}</td>
-                      <td className="px-3 py-2.5 text-right font-mono tabular-nums">
-                        {row.stor_qty > 0 ? (
-                          <span className={isComplete ? "text-emerald-600 font-bold" : isPartial ? "text-amber-600 font-bold" : "text-slate-700"}>
-                            {row.stor_qty.toLocaleString()}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-center text-[11px] font-mono">
-                        {row.eta ? (
-                          <span className="text-blue-600 font-medium">{row.eta.slice(5)}</span>
-                        ) : row.stor_qty > 0 ? (
-                          <span className="text-emerald-500">완료</span>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-[10px] text-slate-500 max-w-[200px] truncate" title={row.remark}>
-                        {row.remark ? row.remark.split("\n")[0].slice(0, 40) : ""}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
+                      {row.label}
+                    </td>
+
+                    {/* 입고스타일수 */}
+                    <td className="px-2 py-2 text-center font-mono tabular-nums text-slate-600">{row.prev.styles}</td>
+                    <td className="px-2 py-2 text-center font-mono tabular-nums font-bold text-slate-800">{row.curr.styles}</td>
+                    <td className="px-2 py-2 text-center font-mono tabular-nums border-r border-slate-100"
+                      style={{ color: styleDelta > 0 ? "#10b981" : styleDelta < 0 ? "#ef4444" : "#64748b" }}
+                    >
+                      {delta(row.curr.styles, row.prev.styles)}
+                    </td>
+
+                    {/* 입고금액 */}
+                    <td className="px-2 py-2 text-right font-mono tabular-nums text-slate-600">{fmtAmt(row.prev.storAmt)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums font-bold text-slate-800">{fmtAmt(row.curr.storAmt)}</td>
+                    <td className="px-2 py-2 text-center font-mono tabular-nums border-r border-slate-100"
+                      style={{ color: growthColor(row.curr.storAmt, row.prev.storAmt) }}
+                    >
+                      {storGrowth}
+                    </td>
+
+                    {/* 누계매출 */}
+                    <td className="px-2 py-2 text-right font-mono tabular-nums text-slate-600">{fmtAmt(row.prev.saleAmt)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums font-bold text-slate-800">{fmtAmt(row.curr.saleAmt)}</td>
+                    <td className="px-2 py-2 text-center font-mono tabular-nums border-r border-slate-100"
+                      style={{ color: growthColor(row.curr.saleAmt, row.prev.saleAmt) }}
+                    >
+                      {saleGrowth}
+                    </td>
+
+                    {/* 판매율 */}
+                    <td className="px-2 py-2 text-center font-mono tabular-nums text-slate-600">{row.prev.saleRate.toFixed(1)}%</td>
+                    <td className="px-2 py-2 text-center font-mono tabular-nums font-bold text-slate-800">{row.curr.saleRate.toFixed(1)}%</td>
+                    <td className="px-2 py-2 text-center font-mono tabular-nums"
+                      style={{ color: row.curr.saleRate - row.prev.saleRate >= 0 ? "#10b981" : "#ef4444" }}
+                    >
+                      {rateDelta}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
