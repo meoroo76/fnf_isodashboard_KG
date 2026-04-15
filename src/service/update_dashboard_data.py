@@ -29,11 +29,9 @@ BRANDS = {
     "ST": "sergio",
 }
 
-# 현재 운영 시즌 (업데이트 대상)
-CURRENT_SEASON = "26S"
-
-# 과거 시즌 (확정 데이터 — 업데이트 안 함)
-FROZEN_SEASONS = ["24F", "25S", "25F"]
+# 운영 시즌 (업데이트 대상) — 현재 + 전년 동기간
+ACTIVE_SEASONS = ["26S", "26F"]  # 26SS, 26FW
+PREV_SEASONS = {"26S": "25S", "26F": "25F"}  # 전년 동기간 매핑
 
 
 def log(msg: str):
@@ -260,17 +258,45 @@ def update_voc(brd_cd: str, brand_name: str):
 
 
 def update_inbound_daily(brd_cd: str, brand_name: str, season: str):
-    """일자별 칼라×사이즈 입고 데이터 (DW_STOR 테이블 직접 조회)"""
-    year = 2000 + int(season[:2])
-    is_fw = season.upper().endswith("F")
-    start_dt = f"{year}-07-01" if is_fw else f"{year - 1}-12-01"
+    """일자별 칼라x사이즈 입고 데이터 (DW_STOR) - 증분 업데이트"""
+    filename = f"{brand_name}_{season.lower()}_inbound_daily.json"
+    daily_file = DATA_DIR / filename
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # 기존 파일에서 최신 날짜 확인
+    existing: list = []
+    last_dt = ""
+    if daily_file.exists():
+        with open(daily_file, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+        if isinstance(existing, dict) and "data" in existing:
+            existing = existing["data"]
+        if existing:
+            last_dt = max(r.get("STOR_DT", "") for r in existing)
+            log(f"  기존 데이터: {len(existing)}건, 최신 {last_dt}")
+
+    if not last_dt:
+        # 최초 실행: 시즌 시작일부터 전체 조회
+        year = 2000 + int(season[:2])
+        is_fw = season.upper().endswith("F")
+        start_dt = f"{year}-07-01" if is_fw else f"{year - 1}-12-01"
+        log(f"  최초 실행: {start_dt}~{today_str} 전체 조회")
+    else:
+        # 증분: 최신 날짜 다음 날부터 (같은 날도 재조회하여 당일 추가분 반영)
+        start_dt = last_dt
+        if start_dt >= today_str:
+            log(f"  이미 최신 ({last_dt}) - 스킵")
+            return
+        # 기존 데이터에서 start_dt 이후 삭제 (재조회 대상)
+        existing = [r for r in existing if r.get("STOR_DT", "") < start_dt]
+        log(f"  증분: {start_dt}~{today_str} 조회")
 
     sql = (
         f"SELECT STOR_DT, PRDT_CD, PART_CD, COLOR_CD, SIZE_CD, PO_NO, QTY "
         f"FROM DW_STOR "
         f"WHERE BRD_CD = '{brd_cd}' AND SESN = '{season}' "
         f"AND QTY > 0 AND RET_YN = false "
-        f"AND STOR_DT >= '{start_dt}' "
+        f"AND STOR_DT >= '{start_dt}' AND STOR_DT <= '{today_str}' "
         f"ORDER BY STOR_DT, PRDT_CD, COLOR_CD, SIZE_CD"
     )
     body = {
@@ -284,8 +310,9 @@ def update_inbound_daily(brd_cd: str, brand_name: str, season: str):
     name = f"{brand_name}_{season.lower()}_inbound_daily"
     filepath = call_cli("/api/v1/hq/search/data_from_snowflake_query", "POST", body, name)
     if filepath:
-        rows = extract_data(filepath)
-        save_json(rows, f"{brand_name}_{season.lower()}_inbound_daily.json")
+        new_rows = extract_data(filepath)
+        all_rows = existing + new_rows
+        save_json(all_rows, filename)
 
 
 def update_season_sale(brd_cd: str, brand_name: str, season: str):
@@ -495,10 +522,12 @@ def main():
     parser.add_argument("--only", choices=["order", "claims", "cost", "voc", "images", "inbound", "inbound-daily", "sale"], help="특정 데이터만 업데이트")
     args = parser.parse_args()
 
+    all_seasons = ACTIVE_SEASONS + list(PREV_SEASONS.values())
+
     log("=" * 60)
     log("대시보드 데이터 자동 업데이트 시작")
-    log(f"현재 시즌: {CURRENT_SEASON}")
-    log(f"고정 시즌 (업데이트 안 함): {', '.join(FROZEN_SEASONS)}")
+    log(f"운영 시즌: {', '.join(ACTIVE_SEASONS)}")
+    log(f"전년 동기간: {', '.join(PREV_SEASONS.values())}")
     log(f"대상 브랜드: {', '.join(f'{v}({k})' for k, v in BRANDS.items())}")
     log("=" * 60)
 
@@ -506,46 +535,52 @@ def main():
         log("[DRY RUN] API 호출 없이 종료")
         return
 
-    # ── 매일 업데이트 항목 ──
     for brd_cd, brand_name in BRANDS.items():
         log(f"\n{'='*40}")
         log(f"브랜드: {brand_name} ({brd_cd})")
         log(f"{'='*40}")
 
-        # 1. 발주/입고 현황 — 현재 시즌만
-        if not args.only or args.only == "order":
-            log(f"\n[1] 발주/입고 현황 ({CURRENT_SEASON})")
-            update_order_inbound(brd_cd, brand_name, CURRENT_SEASON)
+        # ── 시즌별 데이터 (운영 + 전년) ──
+        for season in all_seasons:
+            tag = f"{brand_name}/{season}"
 
-        # 2. 클레임 — 전 시즌 포함 (시즌 무관하게 전체 재조회)
+            # 1. 발주/입고 현황 (전체 재조회 - 소량)
+            if not args.only or args.only == "order":
+                log(f"\n[1] 발주/입고 ({tag})")
+                update_order_inbound(brd_cd, brand_name, season)
+
+            # 2. 원가 (전체 재조회 - 소량)
+            if not args.only or args.only == "cost":
+                log(f"\n[2] 원가 ({tag})")
+                update_cost(brd_cd, brand_name, season)
+
+            # 3. 물류 입고 부킹 (전체 재조회 - 소량)
+            if not args.only or args.only == "inbound":
+                log(f"\n[3] 물류 입고 부킹 ({tag})")
+                update_inbound_booking(brd_cd, brand_name, season)
+
+            # 4. 일자별 입고 상세 DW_STOR (증분 업데이트 - 대량)
+            if not args.only or args.only == "inbound-daily":
+                log(f"\n[4] 일자별 입고 상세 ({tag})")
+                update_inbound_daily(brd_cd, brand_name, season)
+
+        # ── 시즌 무관 데이터 ──
+
+        # 5. 클레임 (전체 재조회)
         if not args.only or args.only == "claims":
-            log(f"\n[2] 클레임 (전체)")
+            log(f"\n[5] 클레임 (전체)")
             update_claims(brd_cd, brand_name)
 
-        # 3. 원가 — 현재 시즌만
-        if not args.only or args.only == "cost":
-            log(f"\n[3] 원가 ({CURRENT_SEASON})")
-            update_cost(brd_cd, brand_name, CURRENT_SEASON)
-
-        # 4. 매장 VOC — 최근 90일
+        # 6. 매장 VOC (최근 90일)
         if not args.only or args.only == "voc":
-            log(f"\n[4] 매장 VOC (최근 90일)")
+            log(f"\n[6] 매장 VOC (최근 90일)")
             update_voc(brd_cd, brand_name)
 
-        # 5. 물류 입고 부킹 — 현재 시즌 전체
-        if not args.only or args.only == "inbound":
-            log(f"\n[5] 물류 입고 부킹 ({CURRENT_SEASON})")
-            update_inbound_booking(brd_cd, brand_name, CURRENT_SEASON)
-
-        # 6. 일자별 입고 상세 (칼라×사이즈) — 증분 업데이트
-        if not args.only or args.only == "inbound-daily":
-            log(f"\n[6] 일자별 입고 상세 ({CURRENT_SEASON})")
-            update_inbound_daily(brd_cd, brand_name, CURRENT_SEASON)
-
-        # 7. 시즌 판매 데이터 — 발입출판재
-        if not args.only or args.only == "sale":
-            log(f"\n[7] 시즌 판매 ({CURRENT_SEASON})")
-            update_season_sale(brd_cd, brand_name, CURRENT_SEASON)
+        # 7. 시즌 판매 (운영 시즌만 - 전년비 포함)
+        for season in ACTIVE_SEASONS:
+            if not args.only or args.only == "sale":
+                log(f"\n[7] 시즌 판매 ({brand_name}/{season})")
+                update_season_sale(brd_cd, brand_name, season)
 
     # 8. 이미지 매핑 — 전 브랜드 통합
     if not args.only or args.only == "images":
