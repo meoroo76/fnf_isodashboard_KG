@@ -112,6 +112,21 @@ export interface Claim {
   [key: string]: unknown;
 }
 
+export interface InboundBooking {
+  BRD_CD: string;
+  PRDT_CD: string;
+  PART_CD: string;
+  PRDT_NM: string;
+  ITEM_GROUP: string;
+  PO_NO: string;
+  MFAC_COMPY_NM: string;
+  PO_CNTRY_NM: string;
+  STOR_EST_DT: string;
+  STOR_QTY_ESTM: number;
+  BOX_QTY: number;
+  [key: string]: unknown;
+}
+
 export interface SeasonSale {
   [key: string]: number | string;
 }
@@ -131,6 +146,11 @@ export interface BrandsResponse {
 function orderInboundFile(brdCd: string, sesn: string): string {
   const s = sesn.toLowerCase().replace("s", "s").replace("f", "f");
   return `${brandFile(brdCd)}_${s}_order_inbound.json`;
+}
+
+function inboundBookingFile(brdCd: string, sesn: string): string {
+  const s = sesn.toLowerCase();
+  return `${brandFile(brdCd)}_${s}_inbound_booking.json`;
 }
 
 function costFile(brdCd: string, sesn: string): string {
@@ -159,6 +179,17 @@ export const api = {
       if (!res.ok) return { data: [], count: 0 };
       const raw = await res.json();
       const rows = parseRows(raw) as OrderInbound[];
+      return { data: rows, count: rows.length };
+    } catch { return { data: [], count: 0 }; }
+  },
+
+  getInboundBooking: async (brdCd: string, sesn: string): Promise<ApiListResponse<InboundBooking>> => {
+    const filename = inboundBookingFile(brdCd, sesn);
+    try {
+      const res = await fetch(`/data/${filename}`);
+      if (!res.ok) return { data: [], count: 0 };
+      const raw = await res.json();
+      const rows = parseRows(raw) as InboundBooking[];
       return { data: rows, count: rows.length };
     } catch { return { data: [], count: 0 }; }
   },

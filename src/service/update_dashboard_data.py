@@ -259,6 +259,56 @@ def update_voc(brd_cd: str, brand_name: str):
         save_json(rows, f"{brand_name}_voc.json")
 
 
+def update_inbound_booking(brd_cd: str, brand_name: str, season: str):
+    """물류 입고 부킹 현황 업데이트 (시즌 전체 기간)"""
+    # SS 시즌: 전년 12/1 ~ 오늘, FW 시즌: 당해 7/1 ~ 오늘
+    year = 2000 + int(season[:2])
+    is_fw = season.upper().endswith("F")
+    start_dt = f"{year}-07-01" if is_fw else f"{year - 1}-12-01"
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    body = {
+        "selectors_product": [
+            {"system_field_name": "BRD_CD"},
+            {"system_field_name": "PRDT_CD"},
+            {"system_field_name": "PART_CD"},
+            {"system_field_name": "PRDT_NM"},
+            {"system_field_name": "ITEM_GROUP"},
+        ],
+        "selectors_order": [
+            {"system_field_name": "PO_NO"},
+            {"system_field_name": "SESN_RUNNING"},
+            {"system_field_name": "MFAC_COMPY_NM"},
+            {"system_field_name": "PO_CNTRY_NM"},
+        ],
+        "metrics_stor_estm": [
+            {"system_field_name": "STOR_QTY_ESTM"},
+            {"system_field_name": "BOX_QTY"},
+        ],
+        "filters_product": [
+            {"system_code": brd_cd, "system_field_name": "BRD_CD"},
+        ],
+        "filters_order": [
+            {"system_code": season, "system_field_name": "SESN_RUNNING"},
+            {"system_code": "한국", "system_field_name": "PO_CNTRY_NM"},
+        ],
+        "periods_stor_estm": {
+            "start_dt": start_dt,
+            "end_dt": today,
+        },
+        "meta_info": {
+            "data_size_only": False,
+            "data_type": "list",
+            "requested_record_rows": 20000,
+        },
+    }
+    name = f"{brand_name}_{season.lower()}_inbound_booking"
+    filepath = call_cli("/api/v1/hq/scm/inbound_booking_status", "POST", body, name)
+    if filepath:
+        rows = extract_data(filepath)
+        save_json(rows, f"{brand_name}_{season.lower()}_inbound_booking.json")
+
+
 def update_product_images():
     """전 브랜드 대표이미지 매핑 업데이트"""
     img_map = {}
@@ -335,7 +385,7 @@ def main():
     parser = argparse.ArgumentParser(description="대시보드 데이터 자동 업데이트")
     parser.add_argument("--no-push", action="store_true", help="git push 생략")
     parser.add_argument("--dry-run", action="store_true", help="API 호출 없이 구조만 확인")
-    parser.add_argument("--only", choices=["order", "claims", "cost", "voc", "images"], help="특정 데이터만 업데이트")
+    parser.add_argument("--only", choices=["order", "claims", "cost", "voc", "images", "inbound"], help="특정 데이터만 업데이트")
     args = parser.parse_args()
 
     log("=" * 60)
@@ -375,9 +425,14 @@ def main():
             log(f"\n[4] 매장 VOC (최근 90일)")
             update_voc(brd_cd, brand_name)
 
-    # 5. 이미지 매핑 — 전 브랜드 통합
+        # 5. 물류 입고 부킹 — 현재 시즌 전체
+        if not args.only or args.only == "inbound":
+            log(f"\n[5] 물류 입고 부킹 ({CURRENT_SEASON})")
+            update_inbound_booking(brd_cd, brand_name, CURRENT_SEASON)
+
+    # 6. 이미지 매핑 — 전 브랜드 통합
     if not args.only or args.only == "images":
-        log(f"\n[5] 제품 이미지 매핑")
+        log(f"\n[6] 제품 이미지 매핑")
         update_product_images()
 
     # ── git commit & push ──

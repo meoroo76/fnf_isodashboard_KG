@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { api, OrderInbound, SeasonSale } from "@/lib/api";
+import { api, OrderInbound, InboundBooking, SeasonSale } from "@/lib/api";
 import { formatNumber, calcYoY, formatDelta, sortSizes } from "@/lib/utils";
 import KpiCard from "@/components/KpiCard";
 import DataTable from "@/components/DataTable";
@@ -113,6 +113,7 @@ export default function OrderDashboard({ brand, season }: Props) {
   const [currData, setCurrData] = useState<OrderInbound[]>([]);
   const [prevData, setPrevData] = useState<OrderInbound[]>([]);
   const [seasonSale, setSeasonSale] = useState<SeasonSale>({});
+  const [inboundBooking, setInboundBooking] = useState<InboundBooking[]>([]);
   const [loading, setLoading] = useState(true);
 
   const prevSeason = useMemo(() => {
@@ -127,10 +128,12 @@ export default function OrderDashboard({ brand, season }: Props) {
       api.getOrderInbound(brand, season),
       api.getOrderInbound(brand, prevSeason),
       api.getSeasonSale(brand),
-    ]).then(([curr, prev, sale]) => {
+      api.getInboundBooking(brand, season),
+    ]).then(([curr, prev, sale, inbound]) => {
       setCurrData(curr.data);
       setPrevData(prev.data);
       setSeasonSale(sale.data);
+      setInboundBooking(inbound.data);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [brand, season, prevSeason]);
@@ -349,37 +352,39 @@ export default function OrderDashboard({ brand, season }: Props) {
   // 주차별 입고 현황 — 주차 선택
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
 
-  // 주차 목록 + 현재 주차 자동 선택
+  // 주차 목록 + 현재 주차 자동 선택 (물류 입고 데이터 기준)
   const weekOptions = useMemo(() => {
-    if (!currData.length) return [];
-    const weekSet = new Map<number, { year: number; startDate: string; endDate: string }>();
+    if (!inboundBooking.length) return [];
+    const weekSet = new Map<string, { year: number; week: number; startDate: string; endDate: string }>();
     const today = new Date();
     today.setHours(23, 59, 59, 999);
-    currData.forEach((r) => {
-      if ((r.STOR_QTY || 0) <= 0 || !r.INDC_DT_CNFM) return;
-      const dt = new Date(r.INDC_DT_CNFM as string);
-      if (dt > today) return; // 미래 날짜(입고 미확정) 제외
+    inboundBooking.forEach((r) => {
+      if (!r.STOR_EST_DT || (r.STOR_QTY_ESTM || 0) <= 0) return;
+      const dt = new Date(r.STOR_EST_DT);
+      if (dt > today) return;
       const wk = getISOWeek(dt);
-      if (!weekSet.has(wk)) {
-        // 해당 주의 월~일 범위 계산
+      const yr = dt.getFullYear();
+      const key = `${yr}-${wk}`;
+      if (!weekSet.has(key)) {
         const monday = new Date(dt);
         monday.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
         const sunday = new Date(monday);
         sunday.setDate(monday.getDate() + 6);
-        weekSet.set(wk, {
-          year: dt.getFullYear(),
+        weekSet.set(key, {
+          year: yr,
+          week: wk,
           startDate: `${monday.getMonth() + 1}/${monday.getDate()}`,
           endDate: `${sunday.getMonth() + 1}/${sunday.getDate()}`,
         });
       }
     });
-    return [...weekSet.entries()]
-      .sort(([a], [b]) => b - a) // 최신 주차 먼저
-      .map(([wk, info]) => ({
-        week: wk,
-        label: `${wk}W (${info.startDate}~${info.endDate})`,
+    return [...weekSet.values()]
+      .sort((a, b) => b.year - a.year || b.week - a.week) // 최신 주차 먼저
+      .map((info) => ({
+        week: info.week,
+        label: `${info.week}W (${info.startDate}~${info.endDate})`,
       }));
-  }, [currData]);
+  }, [inboundBooking]);
 
   // 현재 주차 자동 선택
   useMemo(() => {
@@ -391,25 +396,25 @@ export default function OrderDashboard({ brand, season }: Props) {
     }
   }, [weekOptions, selectedWeek]);
 
-  // 선택된 주차의 입고 데이터 — 스타일 단위 집계 (칼라 목록 포함)
+  // 선택된 주차의 물류 입고 데이터 — 스타일 단위 집계
   interface StyleInbound {
     prdt_cd: string;
     prdt_nm: string;
     colors: string[];
     stor_qty: number;
-    ord_qty: number;
+    box_qty: number;
     supplier: string;
-    indc_dt: string;
+    stor_dt: string;
   }
 
   const weeklyStyleList = useMemo((): StyleInbound[] => {
-    if (!selectedWeek || !currData.length) return [];
+    if (!selectedWeek || !inboundBooking.length) return [];
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
-    const rows = currData.filter((r) => {
-      if ((r.STOR_QTY || 0) <= 0 || !r.INDC_DT_CNFM) return false;
-      const dt = new Date(r.INDC_DT_CNFM as string);
-      if (dt > todayEnd) return false; // 미래 날짜(입고 미확정) 제외
+    const rows = inboundBooking.filter((r) => {
+      if (!r.STOR_EST_DT || (r.STOR_QTY_ESTM || 0) <= 0) return false;
+      const dt = new Date(r.STOR_EST_DT);
+      if (dt > todayEnd) return false;
       return getISOWeek(dt) === selectedWeek;
     });
 
@@ -417,30 +422,28 @@ export default function OrderDashboard({ brand, season }: Props) {
     rows.forEach((r) => {
       const key = r.PRDT_CD;
       const cur = map.get(key);
-      const clr = String(r.COLOR_CD || "");
       if (!cur) {
         map.set(key, {
           prdt_cd: r.PRDT_CD,
           prdt_nm: r.PRDT_NM || "-",
           colors: [],
-          colorSet: new Set(clr ? [clr] : []),
-          stor_qty: r.STOR_QTY || 0,
-          ord_qty: r.ORD_QTY || 0,
+          colorSet: new Set<string>(),
+          stor_qty: r.STOR_QTY_ESTM || 0,
+          box_qty: r.BOX_QTY || 0,
           supplier: r.MFAC_COMPY_NM || "-",
-          indc_dt: String(r.INDC_DT_CNFM || ""),
+          stor_dt: r.STOR_EST_DT,
         });
       } else {
-        cur.stor_qty += r.STOR_QTY || 0;
-        cur.ord_qty += r.ORD_QTY || 0;
-        if (clr) cur.colorSet.add(clr);
-        if (r.INDC_DT_CNFM && String(r.INDC_DT_CNFM) > cur.indc_dt) cur.indc_dt = String(r.INDC_DT_CNFM);
+        cur.stor_qty += r.STOR_QTY_ESTM || 0;
+        cur.box_qty += r.BOX_QTY || 0;
+        if (r.STOR_EST_DT > cur.stor_dt) cur.stor_dt = r.STOR_EST_DT;
       }
     });
 
     return [...map.values()]
       .map((r) => ({ ...r, colors: [...r.colorSet].sort() }))
       .sort((a, b) => b.stor_qty - a.stor_qty);
-  }, [currData, selectedWeek]);
+  }, [inboundBooking, selectedWeek]);
 
   // 스타일 이미지 URL 로드 (KG 대표이미지 매핑 JSON)
   const [styleImages, setStyleImages] = useState<Record<string, string | null>>({});
@@ -866,8 +869,8 @@ export default function OrderDashboard({ brand, season }: Props) {
               <div className="px-5 py-2.5 bg-slate-800 text-white flex items-center text-[11px] font-bold">
                 <span className="flex-1">합계</span>
                 <span className="px-3">{weeklyStyleList.length} STY</span>
-                <span className="px-3">{weeklyStyleList.reduce((s, r) => s + r.colors.length, 0)} CLR</span>
                 <span className="px-3 font-mono tabular-nums">{weeklyStyleList.reduce((s, r) => s + r.stor_qty, 0).toLocaleString()} PCS</span>
+                <span className="px-3">{weeklyStyleList.reduce((s, r) => s + r.box_qty, 0).toLocaleString()} BOX</span>
               </div>
             )}
 
@@ -881,14 +884,15 @@ export default function OrderDashboard({ brand, season }: Props) {
                   <tr>
                     <th className="text-left px-4 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">이미지</th>
                     <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">품번</th>
-                    <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">칼라</th>
                     <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고수량</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">BOX</th>
                     <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">협력사</th>
+                    <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고일</th>
                   </tr>
                 </thead>
                 <tbody>
                   {weeklyStyleList.length === 0 ? (
-                    <tr><td colSpan={5} className="text-center py-10 text-slate-400">해당 주차 입고 데이터 없음</td></tr>
+                    <tr><td colSpan={6} className="text-center py-10 text-slate-400">해당 주차 입고 데이터 없음</td></tr>
                   ) : (
                     weeklyStyleList.map((row, idx) => (
                       <tr
@@ -907,31 +911,17 @@ export default function OrderDashboard({ brand, season }: Props) {
                           <div className="font-medium text-slate-800 text-[11px]">{row.prdt_cd.replace(/^[A-Z]\d{2}[A-Z]/, "")}</div>
                           <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{row.prdt_nm}</div>
                         </td>
-                        <td className="px-3 py-2">
-                          <div className="flex flex-wrap gap-1">
-                            {row.colors.map((clr) => {
-                              const ci = getColorInfo(clr);
-                              return (
-                                <span
-                                  key={clr}
-                                  className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-medium"
-                                  style={{
-                                    backgroundColor: ci.bg,
-                                    color: ci.isDark ? "#fff" : "#1e293b",
-                                    border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}`,
-                                  }}
-                                >
-                                  {clr}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </td>
                         <td className="px-3 py-2 text-right font-mono tabular-nums font-bold text-slate-800">
                           {row.stor_qty.toLocaleString()}
                         </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-600">
+                          {row.box_qty}
+                        </td>
                         <td className="px-3 py-2 text-[11px] text-slate-600 truncate max-w-[100px]">
                           {row.supplier}
+                        </td>
+                        <td className="px-3 py-2 text-[11px] text-slate-500 font-mono">
+                          {row.stor_dt.slice(5)}
                         </td>
                       </tr>
                     ))
