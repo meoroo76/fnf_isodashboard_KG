@@ -127,6 +127,16 @@ export interface InboundBooking {
   [key: string]: unknown;
 }
 
+export interface InboundDaily {
+  STOR_DT: string;
+  PRDT_CD: string;
+  PART_CD: string;
+  COLOR_CD: string;
+  SIZE_CD: string;
+  PO_NO: string;
+  QTY: number;
+}
+
 export interface SeasonSale {
   [key: string]: number | string;
 }
@@ -179,6 +189,18 @@ export const api = {
       if (!res.ok) return { data: [], count: 0 };
       const raw = await res.json();
       const rows = parseRows(raw) as OrderInbound[];
+      return { data: rows, count: rows.length };
+    } catch { return { data: [], count: 0 }; }
+  },
+
+  getInboundDaily: async (brdCd: string, sesn: string): Promise<ApiListResponse<InboundDaily>> => {
+    const s = sesn.toLowerCase();
+    const filename = `${brandFile(brdCd)}_${s}_inbound_daily.json`;
+    try {
+      const res = await fetch(`/data/${filename}`);
+      if (!res.ok) return { data: [], count: 0 };
+      const raw = await res.json();
+      const rows = parseRows(raw) as InboundDaily[];
       return { data: rows, count: rows.length };
     } catch { return { data: [], count: 0 }; }
   },

@@ -259,6 +259,35 @@ def update_voc(brd_cd: str, brand_name: str):
         save_json(rows, f"{brand_name}_voc.json")
 
 
+def update_inbound_daily(brd_cd: str, brand_name: str, season: str):
+    """일자별 칼라×사이즈 입고 데이터 (DW_STOR 테이블 직접 조회)"""
+    year = 2000 + int(season[:2])
+    is_fw = season.upper().endswith("F")
+    start_dt = f"{year}-07-01" if is_fw else f"{year - 1}-12-01"
+
+    sql = (
+        f"SELECT STOR_DT, PRDT_CD, PART_CD, COLOR_CD, SIZE_CD, PO_NO, QTY "
+        f"FROM DW_STOR "
+        f"WHERE BRD_CD = '{brd_cd}' AND SESN = '{season}' "
+        f"AND QTY > 0 AND RET_YN = false "
+        f"AND STOR_DT >= '{start_dt}' "
+        f"ORDER BY STOR_DT, PRDT_CD, COLOR_CD, SIZE_CD"
+    )
+    body = {
+        "sql": sql,
+        "meta_info": {
+            "data_size_only": False,
+            "data_type": "list",
+            "requested_record_rows": 20000,
+        },
+    }
+    name = f"{brand_name}_{season.lower()}_inbound_daily"
+    filepath = call_cli("/api/v1/hq/search/data_from_snowflake_query", "POST", body, name)
+    if filepath:
+        rows = extract_data(filepath)
+        save_json(rows, f"{brand_name}_{season.lower()}_inbound_daily.json")
+
+
 def update_season_sale(brd_cd: str, brand_name: str, season: str):
     """시즌 발입출판재 업데이트 (판매금액 KPI용)"""
     year = 2000 + int(season[:2])
@@ -463,7 +492,7 @@ def main():
     parser = argparse.ArgumentParser(description="대시보드 데이터 자동 업데이트")
     parser.add_argument("--no-push", action="store_true", help="git push 생략")
     parser.add_argument("--dry-run", action="store_true", help="API 호출 없이 구조만 확인")
-    parser.add_argument("--only", choices=["order", "claims", "cost", "voc", "images", "inbound", "sale"], help="특정 데이터만 업데이트")
+    parser.add_argument("--only", choices=["order", "claims", "cost", "voc", "images", "inbound", "inbound-daily", "sale"], help="특정 데이터만 업데이트")
     args = parser.parse_args()
 
     log("=" * 60)
@@ -508,14 +537,19 @@ def main():
             log(f"\n[5] 물류 입고 부킹 ({CURRENT_SEASON})")
             update_inbound_booking(brd_cd, brand_name, CURRENT_SEASON)
 
-        # 6. 시즌 판매 데이터 — 발입출판재
+        # 6. 일자별 입고 상세 (칼라×사이즈) — 증분 업데이트
+        if not args.only or args.only == "inbound-daily":
+            log(f"\n[6] 일자별 입고 상세 ({CURRENT_SEASON})")
+            update_inbound_daily(brd_cd, brand_name, CURRENT_SEASON)
+
+        # 7. 시즌 판매 데이터 — 발입출판재
         if not args.only or args.only == "sale":
-            log(f"\n[6] 시즌 판매 ({CURRENT_SEASON})")
+            log(f"\n[7] 시즌 판매 ({CURRENT_SEASON})")
             update_season_sale(brd_cd, brand_name, CURRENT_SEASON)
 
-    # 7. 이미지 매핑 — 전 브랜드 통합
+    # 8. 이미지 매핑 — 전 브랜드 통합
     if not args.only or args.only == "images":
-        log(f"\n[7] 제품 이미지 매핑")
+        log(f"\n[8] 제품 이미지 매핑")
         update_product_images()
 
     # ── git commit & push ──

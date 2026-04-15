@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { api, OrderInbound, InboundBooking, SeasonSale } from "@/lib/api";
+import { api, OrderInbound, InboundBooking, InboundDaily, SeasonSale } from "@/lib/api";
 import { formatNumber, calcYoY, formatDelta, sortSizes } from "@/lib/utils";
 import KpiCard from "@/components/KpiCard";
 import DataTable from "@/components/DataTable";
@@ -114,6 +114,7 @@ export default function OrderDashboard({ brand, season }: Props) {
   const [prevData, setPrevData] = useState<OrderInbound[]>([]);
   const [seasonSale, setSeasonSale] = useState<SeasonSale>({});
   const [inboundBooking, setInboundBooking] = useState<InboundBooking[]>([]);
+  const [inboundDaily, setInboundDaily] = useState<InboundDaily[]>([]);
   const [loading, setLoading] = useState(true);
 
   const prevSeason = useMemo(() => {
@@ -129,11 +130,13 @@ export default function OrderDashboard({ brand, season }: Props) {
       api.getOrderInbound(brand, prevSeason),
       api.getSeasonSale(brand),
       api.getInboundBooking(brand, season),
-    ]).then(([curr, prev, sale, inbound]) => {
+      api.getInboundDaily(brand, season),
+    ]).then(([curr, prev, sale, inbound, daily]) => {
       setCurrData(curr.data);
       setPrevData(prev.data);
       setSeasonSale(sale.data);
       setInboundBooking(inbound.data);
+      setInboundDaily(daily.data);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [brand, season, prevSeason]);
@@ -522,24 +525,24 @@ export default function OrderDashboard({ brand, season }: Props) {
       .sort((a, b) => b[1].ord - a[1].ord)
       .map(([c]) => c);
 
-    // 일자별 입고 상세 — 물류 입고 데이터(inboundBooking) 기준
-    const inboundMap = new Map<string, { date: string; color: string; po_no: string; bySz: Map<string, number>; qty: number }>();
-    inboundBooking
-      .filter((r) => r.PRDT_CD === selectedStyleDetail && (r.STOR_QTY_ESTM || 0) > 0 && r.STOR_EST_DT)
+    // 일자별 입고 상세 — DW_STOR 기준 (칼라×사이즈 매트릭스)
+    const inboundMap = new Map<string, { date: string; color: string; po_no: string; bySz: Map<string, number> }>();
+    inboundDaily
+      .filter((r) => r.PRDT_CD === selectedStyleDetail && (r.QTY || 0) > 0)
       .forEach((r) => {
-        const key = `${r.STOR_EST_DT}_${r.PO_NO || "-"}`;
+        const key = `${r.STOR_DT}_${r.COLOR_CD || "-"}`;
         const cur = inboundMap.get(key) || {
-          date: r.STOR_EST_DT,
-          color: "-",
+          date: r.STOR_DT,
+          color: String(r.COLOR_CD || "-"),
           po_no: r.PO_NO || "-",
           bySz: new Map<string, number>(),
-          qty: 0,
         };
-        cur.qty += r.STOR_QTY_ESTM || 0;
+        const sz = String(r.SIZE_CD || "-");
+        cur.bySz.set(sz, (cur.bySz.get(sz) || 0) + (r.QTY || 0));
         inboundMap.set(key, cur);
       });
     const inboundRows = [...inboundMap.values()]
-      .sort((a, b) => a.date.localeCompare(b.date));
+      .sort((a, b) => a.date.localeCompare(b.date) || a.color.localeCompare(b.color));
 
     const totalOrd = [...colorTotals.values()].reduce((s, c) => s + c.ord, 0);
     const totalStor = [...colorTotals.values()].reduce((s, c) => s + c.stor, 0);
@@ -1114,34 +1117,46 @@ export default function OrderDashboard({ brand, season }: Props) {
                     </table>
                   </div>
 
-                  {/* 일자별 입고 상세 — 물류 입고 기준 */}
+                  {/* 일자별 입고 상세 — DW_STOR 기준, 사이즈 가로축 */}
                   <div className="px-6 py-4 border-t border-slate-100 overflow-x-auto">
-                    <h4 className="text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">일자별 물류 입고 내역</h4>
+                    <h4 className="text-[12px] font-bold text-slate-700 uppercase tracking-wider mb-2">일자별 입고 상세</h4>
                     <table className="w-full text-[11px] border-collapse">
                       <thead>
                         <tr className="border-b-2 border-slate-200 bg-slate-50">
-                          <th className="text-center px-3 py-2 text-[10px] font-semibold text-slate-500">입고일</th>
-                          <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-500">수량</th>
-                          <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500">PO</th>
-                          <th className="text-center px-3 py-2 text-[10px] font-semibold text-slate-500">구분</th>
+                          <th className="text-center px-2 py-2 text-[10px] font-semibold text-slate-500">입고일</th>
+                          <th className="text-left px-2 py-2 text-[10px] font-semibold text-slate-500">칼라</th>
+                          {styleDetailData.sizes.map((sz) => (
+                            <th key={sz} className="text-right px-1.5 py-2 text-[10px] font-semibold text-slate-500 min-w-[42px]">{sz}</th>
+                          ))}
+                          <th className="text-right px-2 py-2 text-[10px] font-semibold text-slate-500 bg-slate-100">합계</th>
+                          <th className="text-left px-2 py-2 text-[10px] font-semibold text-slate-500">PO</th>
                         </tr>
                       </thead>
                       <tbody>
                         {styleDetailData.inboundRows.length === 0 ? (
-                          <tr><td colSpan={4} className="text-center py-6 text-slate-400">물류 입고 내역 없음</td></tr>
+                          <tr><td colSpan={styleDetailData.sizes.length + 4} className="text-center py-6 text-slate-400">입고 내역 없음</td></tr>
                         ) : (
                           styleDetailData.inboundRows.map((r, i) => {
-                            const isReorder = r.po_no.slice(-1) !== "1";
+                            const ci = getColorInfo(r.color);
+                            const rowTotal = [...r.bySz.values()].reduce((s, v) => s + v, 0);
                             return (
                               <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                <td className="px-3 py-2 text-center text-slate-600 font-mono">{r.date.slice(5)}</td>
-                                <td className="px-3 py-2 text-right font-mono tabular-nums font-bold text-slate-800">{r.qty.toLocaleString()}</td>
-                                <td className="px-3 py-2 text-slate-500 font-mono text-[10px]">{r.po_no}</td>
-                                <td className="px-3 py-2 text-center">
-                                  <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${isReorder ? "bg-amber-50 text-amber-600" : "bg-blue-50 text-blue-600"}`}>
-                                    {isReorder ? "리오더" : "이니셜"}
+                                <td className="px-2 py-1.5 text-center text-slate-600">{r.date.slice(5)}</td>
+                                <td className="px-2 py-1.5">
+                                  <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-medium" style={{ backgroundColor: ci.bg, color: ci.isDark ? "#fff" : "#1e293b", border: `1px solid ${ci.isDark ? "transparent" : "#e2e8f0"}` }}>
+                                    {r.color}
                                   </span>
                                 </td>
+                                {styleDetailData.sizes.map((sz) => {
+                                  const v = r.bySz.get(sz) || 0;
+                                  return (
+                                    <td key={sz} className="px-1.5 py-1.5 text-right font-mono tabular-nums text-slate-700">
+                                      {v > 0 ? v.toLocaleString() : <span className="text-slate-200">-</span>}
+                                    </td>
+                                  );
+                                })}
+                                <td className="px-2 py-1.5 text-right font-mono tabular-nums font-bold text-slate-800 bg-slate-50/80">{rowTotal.toLocaleString()}</td>
+                                <td className="px-2 py-1.5 text-slate-400 font-mono text-[10px] truncate max-w-[100px]">{r.po_no}</td>
                               </tr>
                             );
                           })
