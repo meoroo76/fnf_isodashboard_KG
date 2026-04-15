@@ -107,6 +107,10 @@ def update_order_inbound(brd_cd: str, brand_name: str, season: str):
             {"system_field_name": "ITEM"},
             {"system_field_name": "PART_CD"},
         ],
+        "selectors_sku": [
+            {"system_field_name": "COLOR_CD"},
+            {"system_field_name": "SIZE_CD"},
+        ],
         "selectors_order": [
             {"system_field_name": "SESN_RUNNING"},
             {"system_field_name": "PO_NO"},

@@ -353,9 +353,12 @@ export default function OrderDashboard({ brand, season }: Props) {
   const weekOptions = useMemo(() => {
     if (!currData.length) return [];
     const weekSet = new Map<number, { year: number; startDate: string; endDate: string }>();
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
     currData.forEach((r) => {
       if ((r.STOR_QTY || 0) <= 0 || !r.INDC_DT_CNFM) return;
       const dt = new Date(r.INDC_DT_CNFM as string);
+      if (dt > today) return; // 미래 날짜(입고 미확정) 제외
       const wk = getISOWeek(dt);
       if (!weekSet.has(wk)) {
         // 해당 주의 월~일 범위 계산
@@ -401,9 +404,12 @@ export default function OrderDashboard({ brand, season }: Props) {
 
   const weeklyStyleList = useMemo((): StyleInbound[] => {
     if (!selectedWeek || !currData.length) return [];
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
     const rows = currData.filter((r) => {
       if ((r.STOR_QTY || 0) <= 0 || !r.INDC_DT_CNFM) return false;
       const dt = new Date(r.INDC_DT_CNFM as string);
+      if (dt > todayEnd) return false; // 미래 날짜(입고 미확정) 제외
       return getISOWeek(dt) === selectedWeek;
     });
 
@@ -599,22 +605,27 @@ export default function OrderDashboard({ brand, season }: Props) {
     const currPoints = calcProgress(currData, currDates, progressMetric);
     const prevPoints = calcProgress(prevData, prevDates, progressMetric);
 
-    // 당해 시즌: 오늘 날짜까지만 표시
+    // 당해 시즌: 오늘까지만 실적 표시, X축은 시즌 종료(5/31)까지 전체 범위
     const today = new Date();
     const todayElapsed = Math.round((today.getTime() - currDates.start.getTime()) / 86400000);
 
-    // 당해 시즌 날짜 라벨 + 전년은 동일 경과일로 매칭
-    const merged = currPoints
-      .filter((cp) => cp.elapsed <= todayElapsed) // 당해는 오늘까지만
-      .map((cp) => {
-        const refDate = new Date(currDates.start.getTime() + cp.elapsed * 86400000);
+    // 전체 시즌 범위의 포인트 생성 (X축 5/31까지 표시)
+    const allElapsed = new Set<number>();
+    currPoints.forEach((p) => allElapsed.add(p.elapsed));
+    prevPoints.forEach((p) => allElapsed.add(p.elapsed));
+    const sortedElapsed = [...allElapsed].sort((a, b) => a - b);
+
+    const merged = sortedElapsed.map((elapsed) => {
+        const refDate = new Date(currDates.start.getTime() + elapsed * 86400000);
         const label = `${refDate.getMonth() + 1}/${refDate.getDate()}`;
-        const prevMatch = prevPoints.find((pp) => pp.elapsed === cp.elapsed);
+        const currMatch = currPoints.find((cp) => cp.elapsed === elapsed);
+        const prevMatch = prevPoints.find((pp) => pp.elapsed === elapsed);
         return {
           label,
-          당해: Math.round(cp.rate * 10) / 10,
+          // 당해는 오늘까지만 값 표시, 이후는 null (라인 끊김)
+          당해: elapsed <= todayElapsed && currMatch ? Math.round(currMatch.rate * 10) / 10 : null,
           전년: prevMatch ? Math.round(prevMatch.rate * 10) / 10 : 0,
-          currCum: Math.round(cp.cumValue * 100) / 100,
+          currCum: elapsed <= todayElapsed && currMatch ? Math.round(currMatch.cumValue * 100) / 100 : null,
           prevCum: prevMatch ? Math.round(prevMatch.cumValue * 100) / 100 : 0,
         };
       });
@@ -764,9 +775,12 @@ export default function OrderDashboard({ brand, season }: Props) {
                 const row = payload[0]?.payload;
                 if (!row) return null;
                 const metricUnit = progressMetric === "styles" ? "STY" : progressMetric === "qty" ? "PCS" : "억";
-                const currVal = progressMetric === "amt"
-                  ? `${Number(row.currCum).toFixed(1)}${metricUnit}`
-                  : `${Math.round(row.currCum).toLocaleString()}${metricUnit}`;
+                const hasCurr = row.currCum != null;
+                const currVal = hasCurr
+                  ? (progressMetric === "amt"
+                    ? `${Number(row.currCum).toFixed(1)}${metricUnit}`
+                    : `${Math.round(row.currCum).toLocaleString()}${metricUnit}`)
+                  : "-";
                 const prevVal = progressMetric === "amt"
                   ? `${Number(row.prevCum).toFixed(1)}${metricUnit}`
                   : `${Math.round(row.prevCum).toLocaleString()}${metricUnit}`;
@@ -788,7 +802,7 @@ export default function OrderDashboard({ brand, season }: Props) {
                         {currVal}
                       </span>
                       <span style={{ fontSize: 13, color: "#818cf8", fontWeight: 700, marginLeft: "auto" }}>
-                        {row.당해}%
+                        {row.당해 != null ? `${row.당해}%` : "-"}
                       </span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -807,7 +821,7 @@ export default function OrderDashboard({ brand, season }: Props) {
             />
             <ReferenceLine y={100} stroke="#e2e8f0" strokeDasharray="6 3" label={{ value: "100%", position: "right", fontSize: 10, fill: "#94a3b8" }} />
             <Area type="monotone" dataKey="전년" stroke="#cbd5e1" strokeWidth={2} fill="transparent" strokeDasharray="5 5" dot={false} />
-            <Area type="monotone" dataKey="당해" stroke="#4f46e5" strokeWidth={2.5} fill="url(#gradCurr)" dot={{ fill: "#4f46e5", r: 3, strokeWidth: 0 }} activeDot={{ r: 6, stroke: "#4f46e5", strokeWidth: 2, fill: "#fff" }} />
+            <Area type="monotone" dataKey="당해" stroke="#4f46e5" strokeWidth={2.5} fill="url(#gradCurr)" dot={{ fill: "#4f46e5", r: 3, strokeWidth: 0 }} activeDot={{ r: 6, stroke: "#4f46e5", strokeWidth: 2, fill: "#fff" }} connectNulls={false} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
