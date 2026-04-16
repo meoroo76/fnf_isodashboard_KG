@@ -50,6 +50,7 @@ export default function Home() {
   const [activePage, setActivePage] = useState("order_dashboard");
   const [brand, setBrand] = useState("V");
   const [season, setSeason] = useState("26S");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const PageComponent = PAGE_COMPONENTS[activePage];
 
@@ -62,9 +63,11 @@ export default function Home() {
         onBrandChange={setBrand}
         season={season}
         onSeasonChange={setSeason}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((p) => !p)}
       />
 
-      <main className="flex-1 ml-[240px]">
+      <main className={`flex-1 transition-all duration-200 ${sidebarCollapsed ? "ml-[56px]" : "ml-[240px]"}`}>
         {/* Hero Bar */}
         <div className="mx-6 mt-6 mb-4">
           <div
