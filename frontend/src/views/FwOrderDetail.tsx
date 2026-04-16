@@ -66,23 +66,35 @@ function TextModal({ value, onSave, onClose }: { value: string; onSave: (v: stri
 }
 
 // ── 열 필터 드롭다운 (헤더2행 각 열) ──
-function ColumnFilter({ colKey, options, selected, onChange, anchor }: {
-  colKey: string; options: string[]; selected: Set<string>;
-  onChange: (s: Set<string>) => void; anchor: "left" | "right";
+function ColumnFilter({ options, selected, onChange }: {
+  options: string[]; selected: Set<string>;
+  onChange: (s: Set<string>) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const [dropLeft, setDropLeft] = useState(false);
+
   useEffect(() => {
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
+  // 열릴 때 화면 밖으로 나가는지 체크하여 방향 결정
+  const handleOpen = () => {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const spaceRight = window.innerWidth - rect.left;
+      setDropLeft(spaceRight < 160);
+    }
+    setOpen(!open);
+  };
+
   const isActive = selected.size > 0;
 
   return (
     <div ref={ref} className="inline-block relative ml-0.5">
-      <button onClick={() => setOpen(!open)}
+      <button onClick={handleOpen}
         className={`align-middle ${isActive ? "text-blue-500" : "text-slate-300 hover:text-slate-500"}`}
         title="필터">
         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -90,7 +102,7 @@ function ColumnFilter({ colKey, options, selected, onChange, anchor }: {
         </svg>
       </button>
       {open && (
-        <div className={`absolute top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-[55] min-w-[130px] max-h-[260px] overflow-y-auto py-1 ${anchor === "right" ? "right-0" : "left-0"}`}>
+        <div className={`absolute top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-[55] min-w-[130px] max-h-[260px] overflow-y-auto py-1 ${dropLeft ? "right-0" : "left-0"}`}>
           <div className="flex gap-2 px-3 py-1 border-b border-slate-100">
             <button onClick={() => onChange(new Set())} className="text-[10px] text-red-400 font-medium">해제</button>
             <button onClick={() => onChange(new Set(options))} className="text-[10px] text-blue-400 font-medium">전체</button>
@@ -396,7 +408,7 @@ export default function FwOrderDetail() {
   };
 
   // ── 하위 헤더 (필터 포함) ──
-  const buildSubHeader = (cols: ColDef[], side: "left" | "right"): ReactNode => (
+  const buildSubHeader = (cols: ColDef[]): ReactNode => (
     <tr className="bg-white border-b border-slate-200">
       {cols.map((col) => {
         let shortLabel = col.label;
@@ -413,10 +425,9 @@ export default function FwOrderDetail() {
             {shortLabel}
             {col.editable && <span className="text-blue-400 ml-0.5">*</span>}
             {hasFilter && (
-              <ColumnFilter colKey={col.key} options={filterOpts!}
+              <ColumnFilter options={filterOpts!}
                 selected={colFilters[col.key] || new Set()}
-                onChange={(s) => setColFilter(col.key, s)}
-                anchor={side === "left" ? "left" : "right"} />
+                onChange={(s) => setColFilter(col.key, s)} />
             )}
           </th>
         );
@@ -500,7 +511,7 @@ export default function FwOrderDetail() {
           <table className="text-[11px] border-collapse whitespace-nowrap table-fixed">
             <thead className="sticky top-0 z-20">
               <tr className="border-b border-slate-200">{buildTopHeader(visibleColumns)}</tr>
-              {buildSubHeader(visibleColumns, "right")}
+              {buildSubHeader(visibleColumns)}
             </thead>
             <tbody>
               {filteredData.map((row) => (
