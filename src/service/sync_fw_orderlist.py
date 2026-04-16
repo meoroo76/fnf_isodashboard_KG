@@ -119,11 +119,62 @@ def json_to_cell(value, col_type: str):
     return str(value)
 
 
+def _build_lookup_tables(wb) -> tuple[dict, dict]:
+    """엑셀 수식 시트에서 VLOOKUP 매핑 테이블 생성"""
+    # 복종코드 → 분류 (담당자(함수) 시트 F:I)
+    category_map: dict[str, str] = {}
+    ws_func = wb["담당자(함수)"]
+    for row in range(2, ws_func.max_row + 1):
+        code = ws_func.cell(row=row, column=6).value
+        cat = ws_func.cell(row=row, column=9).value
+        if code and cat:
+            category_map[str(code).strip()] = str(cat).strip()
+
+    # 생산처 → 담당자 (입고율 시트 G:H)
+    staff_map: dict[str, str] = {}
+    ws_rate = wb["입고율"]
+    for row in range(4, ws_rate.max_row + 1):
+        supplier = ws_rate.cell(row=row, column=7).value
+        staff = ws_rate.cell(row=row, column=8).value
+        if supplier and staff:
+            staff_map[str(supplier).strip()] = str(staff).strip()
+
+    return category_map, staff_map
+
+
+def _compute_formula_fields(rows: list[dict], category_map: dict, staff_map: dict):
+    """수식 기반 컬럼(복종/분류/성별/M/담당자)을 Python으로 계산"""
+    prev_style = ""
+    for row in rows:
+        style_no = row.get("style_no") or ""
+        # 복종 = MID(I,3,2)
+        row["item_type"] = style_no[2:4] if len(style_no) > 3 else ""
+        # 성별 = MID(I,2,1)
+        row["gender"] = style_no[1] if len(style_no) > 1 else ""
+        # 분류 = VLOOKUP(복종, 담당자(함수)!F:I, 4)
+        row["category"] = category_map.get(row["item_type"], "")
+        # M = IF(이전행 스타일=현재 스타일, 0, 1)
+        row["is_m"] = 0 if style_no == prev_style else 1
+        prev_style = style_no
+        # 담당자 = VLOOKUP(생산처, 입고율!G:H, 2)
+        supplier = row.get("supplier") or ""
+        matched_staff = ""
+        for key, val in staff_map.items():
+            if key in supplier:
+                matched_staff = val
+                break
+        if not row.get("staff"):
+            row["staff"] = matched_staff
+
+
 def excel_to_json():
     """Excel → JSON 변환"""
     print(f"Reading: {EXCEL_PATH}")
     wb = openpyxl.load_workbook(str(EXCEL_PATH), data_only=True)
     ws = wb[SHEET_NAME]
+
+    # VLOOKUP 매핑 테이블 로드
+    category_map, staff_map = _build_lookup_tables(wb)
 
     rows = []
     for row_idx in range(DATA_START_ROW, DATA_END_ROW + 1):
@@ -137,6 +188,9 @@ def excel_to_json():
             val = ws.cell(row=row_idx, column=col_def["col"]).value
             record[col_def["key"]] = cell_to_json(val, col_def["type"])
         rows.append(record)
+
+    # 수식 컬럼 Python 계산
+    _compute_formula_fields(rows, category_map, staff_map)
 
     # 메타데이터 포함
     output = {
