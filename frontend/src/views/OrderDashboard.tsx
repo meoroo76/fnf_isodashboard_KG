@@ -692,10 +692,11 @@ export default function OrderDashboard({ brand, season }: Props) {
 
     // 미입고 예정 예측선 (스타일수 선택 시에만, 품번 기준)
     const showForecast = progressMetric === "styles" && pendingArrivals.length > 0;
-    const forecastPoints = new Map<number, number>();
+    // { rate, cumForecastStyles } - rate + 예정 스타일수
+    const forecastPoints = new Map<number, { rate: number; addedStyles: number; totalWithForecast: number }>();
+    let arrivedStyleCount = 0;
 
     if (showForecast) {
-      // ETA별 스타일 그룹핑 (7일 단위)
       const pendingByElapsed = new Map<number, Set<string>>();
       for (const p of pendingArrivals) {
         if (!p.eta) continue;
@@ -707,27 +708,25 @@ export default function OrderDashboard({ brand, season }: Props) {
         pendingByElapsed.get(elapsed)!.add(p.style_no);
       }
 
-      // 현재 실적 마지막 값에서 시작
       const lastCurrPoint = currPoints.filter((p) => p.elapsed <= todayElapsed).pop();
       const baseRate = lastCurrPoint?.rate || 0;
       const totalStyles = Math.max(new Set(currData.map((r) => r.PRDT_CD)).size, 1);
-      // 이미 입고된 PRDT_CD 집합
       const arrivedPrdtCds = new Set(currData.filter((r) => (r.STOR_QTY || 0) > 0).map((r) => r.PRDT_CD));
+      arrivedStyleCount = arrivedPrdtCds.size;
       const forecastCumStyles = new Set<string>();
 
-      const sortedPendingElapsed = [...pendingByElapsed.keys()].sort((a, b) => a - b);
-      for (const el of sortedPendingElapsed) {
+      const sortedPendingElapsedInner = [...pendingByElapsed.keys()].sort((a, b) => a - b);
+      for (const el of sortedPendingElapsedInner) {
         pendingByElapsed.get(el)!.forEach((sn) => {
-          // PRDT_CD 매칭: currData에서 style_no가 포함된 PRDT_CD 찾기
           const matchedPrdtCd = currData.find((r) => r.PRDT_CD?.endsWith(sn))?.PRDT_CD;
           if (matchedPrdtCd && !arrivedPrdtCds.has(matchedPrdtCd)) {
             forecastCumStyles.add(matchedPrdtCd);
           } else if (!matchedPrdtCd) {
-            // 발주 데이터에 없는 스타일도 카운트
             forecastCumStyles.add(sn);
           }
         });
-        forecastPoints.set(el, baseRate + (forecastCumStyles.size / totalStyles) * 100);
+        const rate = baseRate + (forecastCumStyles.size / totalStyles) * 100;
+        forecastPoints.set(el, { rate, addedStyles: forecastCumStyles.size, totalWithForecast: arrivedPrdtCds.size + forecastCumStyles.size });
       }
     }
 
@@ -739,16 +738,22 @@ export default function OrderDashboard({ brand, season }: Props) {
         const currMatch = currPoints.find((cp) => cp.elapsed === elapsed);
         const prevMatch = prevPoints.find((pp) => pp.elapsed === elapsed);
 
-        // 예측 점선: 스타일수 선택 시에만
         let forecast: number | null = null;
+        let forecastCum: number | null = null;
+        let forecastAdded: number | null = null;
         if (showForecast && elapsed >= todayElapsed - 7) {
           if (elapsed <= todayElapsed) {
             forecast = currMatch ? Math.round(currMatch.rate * 10) / 10 : null;
-          } else if (forecastPoints.has(elapsed)) {
-            forecast = Math.round(forecastPoints.get(elapsed)! * 10) / 10;
+            forecastCum = arrivedStyleCount;
+            forecastAdded = 0;
           } else {
-            const prevFc = sortedPendingElapsed.filter((e) => e <= elapsed).pop();
-            if (prevFc !== undefined) forecast = Math.round(forecastPoints.get(prevFc)! * 10) / 10;
+            const matchEl = forecastPoints.has(elapsed) ? elapsed : sortedPendingElapsed.filter((e) => e <= elapsed).pop();
+            if (matchEl !== undefined && forecastPoints.has(matchEl)) {
+              const fp = forecastPoints.get(matchEl)!;
+              forecast = Math.round(fp.rate * 10) / 10;
+              forecastCum = fp.totalWithForecast;
+              forecastAdded = fp.addedStyles;
+            }
           }
         }
 
@@ -759,6 +764,8 @@ export default function OrderDashboard({ brand, season }: Props) {
           예정: forecast,
           currCum: elapsed <= todayElapsed && currMatch ? Math.round(currMatch.cumValue * 100) / 100 : null,
           prevCum: prevMatch ? Math.round(prevMatch.cumValue * 100) / 100 : 0,
+          forecastCum,
+          forecastAdded,
         };
       });
 
@@ -921,27 +928,37 @@ export default function OrderDashboard({ brand, season }: Props) {
                 const prevVal = progressMetric === "amt"
                   ? `${Number(row.prevCum).toFixed(1)}${metricUnit}`
                   : `${Math.round(row.prevCum).toLocaleString()}${metricUnit}`;
+                const hasForecast = row.forecastCum != null && row.forecastAdded != null && row.forecastAdded > 0;
                 return (
                   <div style={{
                     background: "#0f172a",
                     borderRadius: 12,
                     padding: "14px 18px",
-                    minWidth: 200,
+                    minWidth: 220,
                     boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
                   }}>
                     <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, fontWeight: 600 }}>
                       📅 {label}
                     </div>
+                    {/* 당해 실적 */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                       <div style={{ width: 8, height: 8, borderRadius: 4, background: "#4f46e5" }} />
                       <span style={{ fontSize: 12, color: "#a5b4fc", fontWeight: 600, width: 36 }}>{season}</span>
                       <span style={{ fontSize: 14, color: "#fff", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                        {currVal}
+                        {hasForecast
+                          ? `${row.forecastCum}${metricUnit}`
+                          : currVal}
                       </span>
+                      {hasForecast && (
+                        <span style={{ fontSize: 11, color: "#a5b4fc" }}>
+                          ({hasCurr ? Math.round(row.currCum) : 0}+{row.forecastAdded})
+                        </span>
+                      )}
                       <span style={{ fontSize: 13, color: "#818cf8", fontWeight: 700, marginLeft: "auto" }}>
-                        {row.당해 != null ? `${row.당해}%` : "-"}
+                        {row.예정 != null ? `${row.예정}%` : row.당해 != null ? `${row.당해}%` : "-"}
                       </span>
                     </div>
+                    {/* 전년 */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ width: 8, height: 8, borderRadius: 4, background: "#64748b", border: "1px dashed #94a3b8" }} />
                       <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 600, width: 36 }}>{prevSeason}</span>
