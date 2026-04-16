@@ -693,43 +693,67 @@ export default function OrderDashboard({ brand, season }: Props) {
     // 미입고 예정 예측선 (스타일수 선택 시에만, 품번 기준)
     const showForecast = progressMetric === "styles" && pendingArrivals.length > 0;
     // { rate, cumForecastStyles } - rate + 예정 스타일수
-    const forecastPoints = new Map<number, { rate: number; addedStyles: number; totalWithForecast: number }>();
+    const forecastPoints = new Map<number, { rate: number; added: number; total: number }>();
     let arrivedStyleCount = 0;
 
-    if (showForecast) {
-      const pendingByElapsed = new Map<number, Set<string>>();
-      for (const p of pendingArrivals) {
-        if (!p.eta) continue;
-        const etaDt = new Date(p.eta);
-        let elapsed = Math.round((etaDt.getTime() - currDates.start.getTime()) / 86400000);
-        elapsed = Math.max(0, Math.min(elapsed, currDates.maxElapsed));
-        elapsed = Math.round(elapsed / 7) * 7;
-        if (!pendingByElapsed.has(elapsed)) pendingByElapsed.set(elapsed, new Set());
-        pendingByElapsed.get(elapsed)!.add(p.style_no);
-      }
+    // 예측 데이터: 실제 날짜별 누적 계산 후 chart elapsed에 매핑
+    let finalForecastRate = 0;
+    let finalForecastAdded = 0;
+    let finalForecastTotal = 0;
 
+    if (showForecast) {
       const lastCurrPoint = currPoints.filter((p) => p.elapsed <= todayElapsed).pop();
       const baseRate = lastCurrPoint?.rate || 0;
       const totalStyles = Math.max(new Set(currData.map((r) => r.PRDT_CD)).size, 1);
       const arrivedPrdtCds = new Set(currData.filter((r) => (r.STOR_QTY || 0) > 0).map((r) => r.PRDT_CD));
       arrivedStyleCount = arrivedPrdtCds.size;
-      const forecastCumStyles = new Set<string>();
 
-      const sortedPendingElapsedInner = [...pendingByElapsed.keys()].sort((a, b) => a - b);
-      for (const el of sortedPendingElapsedInner) {
-        pendingByElapsed.get(el)!.forEach((sn) => {
-          // KG 발주 데이터에 있는 미입고 스타일만 카운트
+      // 실제 날짜별로 스타일 누적 (7일 반올림 없이)
+      const pendingByDay = new Map<number, Set<string>>();
+      for (const p of pendingArrivals) {
+        if (!p.eta) continue;
+        const etaDt = new Date(p.eta);
+        const dayElapsed = Math.round((etaDt.getTime() - currDates.start.getTime()) / 86400000);
+        if (!pendingByDay.has(dayElapsed)) pendingByDay.set(dayElapsed, new Set());
+        pendingByDay.get(dayElapsed)!.add(p.style_no);
+      }
+
+      // 날짜순 누적 계산
+      const forecastCumStyles = new Set<string>();
+      const sortedDays = [...pendingByDay.keys()].sort((a, b) => a - b);
+      const dayForecast = new Map<number, { rate: number; added: number; total: number }>();
+
+      for (const d of sortedDays) {
+        pendingByDay.get(d)!.forEach((sn) => {
           const matchedPrdtCd = currData.find((r) => r.PRDT_CD?.endsWith(sn))?.PRDT_CD;
           if (matchedPrdtCd && !arrivedPrdtCds.has(matchedPrdtCd)) {
             forecastCumStyles.add(matchedPrdtCd);
           }
         });
         const rate = baseRate + (forecastCumStyles.size / totalStyles) * 100;
-        forecastPoints.set(el, { rate, addedStyles: forecastCumStyles.size, totalWithForecast: arrivedPrdtCds.size + forecastCumStyles.size });
+        dayForecast.set(d, { rate, added: forecastCumStyles.size, total: arrivedPrdtCds.size + forecastCumStyles.size });
+      }
+
+      // 최종값 저장
+      if (sortedDays.length > 0) {
+        const lastDay = sortedDays[sortedDays.length - 1];
+        const lf = dayForecast.get(lastDay)!;
+        finalForecastRate = lf.rate;
+        finalForecastAdded = lf.added;
+        finalForecastTotal = lf.total;
+      }
+
+      // chart 7일 간격 포인트에 매핑: 각 chart elapsed 시점까지의 최신 누적값 사용
+      for (const chartElapsed of sortedElapsed) {
+        if (chartElapsed <= todayElapsed) continue;
+        // 이 chart 시점 이전의 모든 ETA 날짜에서 가장 최신 누적값
+        const relevantDays = sortedDays.filter((d) => d <= chartElapsed);
+        if (relevantDays.length > 0) {
+          const latestDay = relevantDays[relevantDays.length - 1];
+          forecastPoints.set(chartElapsed, dayForecast.get(latestDay)!);
+        }
       }
     }
-
-    const sortedPendingElapsed = [...forecastPoints.keys()].sort((a, b) => a - b);
 
     const merged = sortedElapsed.map((elapsed) => {
         const refDate = new Date(currDates.start.getTime() + elapsed * 86400000);
@@ -745,14 +769,11 @@ export default function OrderDashboard({ brand, season }: Props) {
             forecast = currMatch ? Math.round(currMatch.rate * 10) / 10 : null;
             forecastCum = arrivedStyleCount;
             forecastAdded = 0;
-          } else {
-            const matchEl = forecastPoints.has(elapsed) ? elapsed : sortedPendingElapsed.filter((e) => e <= elapsed).pop();
-            if (matchEl !== undefined && forecastPoints.has(matchEl)) {
-              const fp = forecastPoints.get(matchEl)!;
-              forecast = Math.round(fp.rate * 10) / 10;
-              forecastCum = fp.totalWithForecast;
-              forecastAdded = fp.addedStyles;
-            }
+          } else if (forecastPoints.has(elapsed)) {
+            const fp = forecastPoints.get(elapsed)!;
+            forecast = Math.round(fp.rate * 10) / 10;
+            forecastCum = fp.total;
+            forecastAdded = fp.added;
           }
         }
 
