@@ -82,9 +82,17 @@ def extract_data(filepath: Path) -> list:
     return []
 
 
-def save_json(data, filename: str):
-    """frontend/public/data/에 JSON 저장"""
+def save_json(data, filename: str, protect_existing: bool = True):
+    """frontend/public/data/에 JSON 저장
+
+    protect_existing=True: API가 빈 데이터를 반환했을 때 기존 파일을 보호
+    """
     out = DATA_DIR / filename
+    if protect_existing and isinstance(data, list) and len(data) == 0 and out.exists():
+        existing_size = out.stat().st_size
+        if existing_size > 10:  # 기존 파일에 데이터가 있으면 덮어쓰지 않음
+            log(f"  ⚠ 건너뜀: {filename} — API 0건 반환, 기존 데이터 보호 ({existing_size / 1024:.0f} KB)")
+            return
     with open(out, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
     size_kb = out.stat().st_size / 1024
