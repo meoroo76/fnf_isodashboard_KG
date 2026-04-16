@@ -702,8 +702,6 @@ export default function OrderDashboard({ brand, season }: Props) {
     let finalForecastTotal = 0;
 
     if (showForecast) {
-      const lastCurrPoint = currPoints.filter((p) => p.elapsed <= todayElapsed).pop();
-      const baseRate = lastCurrPoint?.rate || 0;
       const totalStyles = Math.max(new Set(currData.map((r) => r.PRDT_CD)).size, 1);
       const arrivedPrdtCds = new Set(currData.filter((r) => (r.STOR_QTY || 0) > 0).map((r) => r.PRDT_CD));
       arrivedStyleCount = arrivedPrdtCds.size;
@@ -730,7 +728,8 @@ export default function OrderDashboard({ brand, season }: Props) {
             forecastCumStyles.add(matchedPrdtCd);
           }
         });
-        const rate = baseRate + (forecastCumStyles.size / totalStyles) * 100;
+        // 절대값 기준 퍼센트 (baseRate 누적오차 방지)
+        const rate = ((arrivedPrdtCds.size + forecastCumStyles.size) / totalStyles) * 100;
         dayForecast.set(d, { rate, added: forecastCumStyles.size, total: arrivedPrdtCds.size + forecastCumStyles.size });
       }
 
