@@ -598,14 +598,19 @@ def main():
         log(f"\n[8] 제품 이미지 매핑")
         update_product_images()
 
-    # 9. 엑셀 생산스케줄 동기화
+    # 9. 엑셀 생산스케줄 동기화 (26FW ORDER LIST + 26SS 미입고 예정)
     if not args.only or args.only == "excel":
         log(f"\n[9] 엑셀 생산스케줄 동기화")
         try:
-            from service.sync_fw_orderlist import excel_to_json
+            from src.service.sync_fw_orderlist import excel_to_json
             excel_to_json()
         except Exception as e:
-            log(f"  [ERROR] 엑셀 동기화 실패: {e}")
+            log(f"  [ERROR] 26FW 엑셀 동기화 실패: {e}")
+        try:
+            from src.service.sync_ss_pending import extract_pending
+            extract_pending()
+        except Exception as e:
+            log(f"  [ERROR] 26SS 미입고 예정 추출 실패: {e}")
 
     # ── git commit & push ──
     log(f"\n{'='*40}")
