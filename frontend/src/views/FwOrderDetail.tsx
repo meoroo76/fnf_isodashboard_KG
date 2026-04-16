@@ -299,11 +299,34 @@ export default function FwOrderDetail() {
   const hasAnyFilter = Object.keys(colFilters).length > 0 || showOnlyM || filterStyleNo;
   const clearAll = () => { setColFilters({}); setShowOnlyM(false); setFilterStyleNo(""); };
 
+  // ── 열 너비 결정 ──
+  const getColWidth = (col: ColDef): number | undefined => {
+    if (col.type === "date") return 56;           // MM-DD 고정폭
+    if (col.type === "date_or_text") return 70;   // 날짜 or 짧은 텍스트
+    if (col.key === "is_m" || col.key === "sku_count") return 28;
+    if (col.key === "gender") return 28;
+    if (col.key === "pcs") return 48;
+    if (col.key === "item_type") return 32;
+    if (col.key === "spot") return 44;
+    if (col.key === "style_no") return 84;
+    if (col.key === "style_name") return 140;
+    if (col.key === "color") return 38;
+    if (col.key === "supplier" || col.key === "staff") return 64;
+    if (col.key === "category") return 56;
+    // 텍스트 열은 최대 너비 제한
+    if (col.type === "text") return 100;
+    if (col.type === "number") return 52;
+    return undefined;
+  };
+
+  // 텍스트가 긴 열 판별 (클릭 시 팝업)
+  const isTextCol = (col: ColDef): boolean =>
+    col.type === "text" && !["item_type", "gender", "spot", "style_no", "color", "category"].includes(col.key);
+
   // ── 셀 렌더 ──
   const renderCell = (row: RowData, col: ColDef): ReactNode => {
     const val = row[col.key];
     const isEditing = editingCell?.row === row._row && editingCell?.key === col.key;
-    const isLongText = col.key === "remark" || col.key === "md_history";
 
     let cellBg = "";
     if (col.group === "progress" && col.key.endsWith("_done") && val) cellBg = "bg-emerald-50 text-emerald-700";
@@ -318,13 +341,15 @@ export default function FwOrderDetail() {
         className="w-full px-1 py-1 text-[11px] border-2 border-blue-400 rounded bg-blue-50 focus:outline-none" />
     );
 
-    if (isLongText) return (
-      <div className="truncate max-w-[120px] cursor-pointer hover:text-blue-600"
-        title={val ? String(val) : "클릭하여 편집"}
-        onClick={() => setModalCell({ row: row._row, key: col.key, value: val ? String(val) : "" })}>
-        {val ? String(val) : ""}
-      </div>
-    );
+    // 텍스트 열: truncate + 클릭 → 팝업
+    if (isTextCol(col) && val) {
+      return (
+        <div className="truncate cursor-pointer hover:text-blue-600"
+          onClick={() => setModalCell({ row: row._row, key: col.key, value: String(val) })}>
+          {String(val)}
+        </div>
+      );
+    }
 
     const display = col.type === "date" || col.type === "date_or_text" ? fmtDate(val)
       : col.key === "is_m" ? (val === 1 ? <span className="text-emerald-500 font-bold">M</span> : "")
@@ -384,7 +409,7 @@ export default function FwOrderDetail() {
 
         return (
           <th key={col.key} className={`px-1 py-1.5 text-center text-[10px] font-semibold text-slate-500 bg-white`}
-            style={col.key === "remark" || col.key === "md_history" ? { maxWidth: "120px" } : undefined}>
+            style={{ width: getColWidth(col), minWidth: getColWidth(col), maxWidth: getColWidth(col) }}>
             {shortLabel}
             {col.editable && <span className="text-blue-400 ml-0.5">*</span>}
             {hasFilter && (
@@ -472,7 +497,7 @@ export default function FwOrderDetail() {
       {/* 테이블 */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div ref={scrollBodyRef} className="overflow-auto" style={{ maxHeight: "75vh" }}>
-          <table className="text-[11px] border-collapse whitespace-nowrap">
+          <table className="text-[11px] border-collapse whitespace-nowrap table-fixed">
             <thead className="sticky top-0 z-20">
               <tr className="border-b border-slate-200">{buildTopHeader(visibleColumns)}</tr>
               {buildSubHeader(visibleColumns, "right")}
@@ -485,8 +510,8 @@ export default function FwOrderDetail() {
                     const isStageEnd = col.group === "progress" && PROGRESS_STAGES.some((s) => s.cols[s.cols.length - 1] === col.key);
                     return (
                       <td key={col.key}
-                        className={`px-1.5 py-1 text-center font-mono tabular-nums text-[11px] ${isStageEnd ? "border-r border-slate-100" : ""} ${isPending ? "ring-1 ring-blue-400 ring-inset" : ""} ${col.key === "style_name" ? "text-left max-w-[150px] truncate" : ""}`}
-                        style={col.key === "remark" || col.key === "md_history" ? { maxWidth: "120px" } : undefined}>
+                        className={`px-1 py-1 text-center font-mono tabular-nums text-[11px] overflow-hidden ${isStageEnd ? "border-r border-slate-100" : ""} ${isPending ? "ring-1 ring-blue-400 ring-inset" : ""} ${col.key === "style_name" ? "text-left" : ""}`}
+                        style={{ width: getColWidth(col), minWidth: getColWidth(col), maxWidth: getColWidth(col) }}>
                         {renderCell(row, col)}
                       </td>
                     );
