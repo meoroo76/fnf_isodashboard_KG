@@ -966,69 +966,6 @@ export default function OrderDashboard({ brand, season }: Props) {
         </ResponsiveContainer>
       </div>
 
-      {/* 금주 입고예정 (스타일 기준) */}
-      {thisWeekPending.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <div className="flex items-center gap-4 mb-4">
-            <h3 className="text-sm font-bold text-slate-700">📋 입고예정 (금주)</h3>
-            <span className="text-xs text-slate-400">
-              {thisWeekPending.length} STY / 미입고 {pendingArrivals.length} STY
-              {" "}/ {thisWeekPending.reduce((s, p) => s + p.total_pcs, 0).toLocaleString()} PCS
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[11px] border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500 w-12">이미지</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">품번</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">스타일명</th>
-                  <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500">구분</th>
-                  <th className="px-3 py-2 text-right text-[10px] font-bold text-slate-500">발주수량</th>
-                  <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">협력사</th>
-                  <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500">입고예정일</th>
-                </tr>
-              </thead>
-              <tbody>
-                {thisWeekPending.map((p, i) => {
-                  const brandPrefix = brand === "V" ? "V" : "ST";
-                  const prdtCd = `${brandPrefix}${season}${p.style_no}`;
-                  const imgUrl = styleImages[prdtCd];
-                  const etaDate = p.eta ? new Date(p.eta) : null;
-                  const isToday = etaDate && etaDate.toDateString() === new Date().toDateString();
-                  return (
-                    <tr key={`${p.style_no}-${i}`} className={`border-b border-slate-50 hover:bg-slate-50 ${isToday ? "bg-amber-50/50" : ""}`}>
-                      <td className="px-3 py-2 text-center">
-                        {imgUrl ? (
-                          <img src={imgUrl} alt="" className="w-10 h-10 rounded-lg object-cover bg-slate-50 mx-auto" />
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-300 mx-auto text-lg">👗</div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="font-mono font-bold text-slate-700">{p.style_no}</div>
-                        <div className="text-[10px] text-slate-400">{p.colors?.join(", ")}</div>
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">{p.style_name}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">{p.category}</span>
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-slate-700">{p.total_pcs.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-slate-600">{p.supplier}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isToday ? "bg-amber-100 text-amber-700" : "bg-blue-50 text-blue-600"}`}>
-                          {p.eta ? p.eta.slice(5) : "-"}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* 주차별 입고 현황 */}
       <div>
         <div className="flex items-center gap-4 mb-4">
@@ -1091,12 +1028,12 @@ export default function OrderDashboard({ brand, season }: Props) {
               <table className="w-full text-[12px]">
                 <thead className="sticky top-0 bg-slate-50 z-10">
                   <tr>
-                    <th className="text-left px-4 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">이미지</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px] w-[52px]">이미지</th>
                     <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">품번</th>
-                    <th className="text-center px-2 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">구분</th>
-                    <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고수량</th>
+                    <th className="text-center px-2 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px] w-[52px]">구분</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px] w-[64px]">입고수량</th>
                     <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">협력사</th>
-                    <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">입고일</th>
+                    <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px] w-[72px]">입고일</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1340,18 +1277,79 @@ export default function OrderDashboard({ brand, season }: Props) {
             )}
           </div>
 
-          {/* 우측: 입고 예정 (플레이스홀더) */}
-          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-            <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
+          {/* 우측: 입고 예정 (금주) */}
+          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden flex flex-col">
+            <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-700">📅 입고 예정 (금주)</h3>
+              {thisWeekPending.length > 0 && (
+                <span className="text-xs text-slate-400">
+                  {thisWeekPending.length} STY / {thisWeekPending.reduce((s, p) => s + p.total_pcs, 0).toLocaleString()} PCS
+                </span>
+              )}
             </div>
-            <div className="flex items-center justify-center h-[400px]">
-              <div className="text-center">
-                <div className="text-4xl mb-3">📋</div>
-                <p className="text-sm text-slate-400">엑셀 시트 연동 예정</p>
-                <p className="text-xs text-slate-300 mt-1">입고 예정 스타일 리스트가 표시됩니다</p>
+            {thisWeekPending.length === 0 ? (
+              <div className="flex items-center justify-center flex-1 min-h-[300px]">
+                <div className="text-center">
+                  <div className="text-4xl mb-3">📋</div>
+                  <p className="text-sm text-slate-400">금주 입고 예정 없음</p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="overflow-y-auto" style={{ maxHeight: "600px" }}>
+                <table className="w-full text-[12px]">
+                  <thead className="sticky top-0 bg-slate-50 z-10">
+                    <tr>
+                      <th className="text-left px-4 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px] w-[52px]">이미지</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">품번</th>
+                      <th className="text-center px-2 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px] w-[52px]">구분</th>
+                      <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px] w-[64px]">발주수량</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">협력사</th>
+                      <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px] w-[72px]">입고예정일</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {thisWeekPending.map((p, i) => {
+                      const brandPrefix = brand === "V" ? "V" : "ST";
+                      const prdtCd = `${brandPrefix}${season}${p.style_no}`;
+                      const imgUrl = styleImages[prdtCd];
+                      const etaDate = p.eta ? new Date(p.eta) : null;
+                      const isToday = etaDate && etaDate.toDateString() === new Date().toDateString();
+                      return (
+                        <tr key={`${p.style_no}-${i}`} className={`border-b border-slate-50 hover:bg-slate-50 ${isToday ? "bg-amber-50/50" : ""}`}>
+                          <td className="px-4 py-2">
+                            {imgUrl ? (
+                              <img src={imgUrl} alt="" className="w-10 h-10 rounded-lg object-cover bg-slate-50" />
+                            ) : (
+                              <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-300 text-[8px]">IMG</div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="font-medium text-slate-800 text-[11px]">{p.style_no}</div>
+                            <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{p.style_name}</div>
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
+                              {p.category}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono tabular-nums font-bold text-slate-800">
+                            {p.total_pcs.toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2 text-[11px] text-slate-600 truncate max-w-[100px]">
+                            {p.supplier}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isToday ? "bg-amber-100 text-amber-700" : "bg-blue-50 text-blue-600"}`}>
+                              {p.eta ? p.eta.slice(5) : "-"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>
