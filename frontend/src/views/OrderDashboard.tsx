@@ -718,11 +718,10 @@ export default function OrderDashboard({ brand, season }: Props) {
       const sortedPendingElapsedInner = [...pendingByElapsed.keys()].sort((a, b) => a - b);
       for (const el of sortedPendingElapsedInner) {
         pendingByElapsed.get(el)!.forEach((sn) => {
+          // KG 발주 데이터에 있는 미입고 스타일만 카운트
           const matchedPrdtCd = currData.find((r) => r.PRDT_CD?.endsWith(sn))?.PRDT_CD;
           if (matchedPrdtCd && !arrivedPrdtCds.has(matchedPrdtCd)) {
             forecastCumStyles.add(matchedPrdtCd);
-          } else if (!matchedPrdtCd) {
-            forecastCumStyles.add(sn);
           }
         });
         const rate = baseRate + (forecastCumStyles.size / totalStyles) * 100;

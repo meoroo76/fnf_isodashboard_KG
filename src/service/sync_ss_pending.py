@@ -80,6 +80,25 @@ def extract_pending():
         if r["eta"] and (not s["eta"] or r["eta"] < s["eta"]):
             s["eta"] = r["eta"]
 
+    # KG 발주 데이터에 있는 스타일만 필터링 (시즌 이월 스타일 제외)
+    kg_order_file = PROJECT_ROOT / "frontend" / "public" / "data" / "duvetica_26s_order_inbound.json"
+    kg_style_nos: set[str] = set()
+    if kg_order_file.exists():
+        with open(kg_order_file, "r", encoding="utf-8") as f:
+            kg_raw = json.load(f)
+        kg_data = kg_raw["data"] if isinstance(kg_raw, dict) and "data" in kg_raw else kg_raw
+        for r in kg_data:
+            prdt_cd = r.get("PRDT_CD", "")
+            if len(prdt_cd) > 4:
+                kg_style_nos.add(prdt_cd[4:])  # V26SVDSK10461 -> VDSK10461
+
+    if kg_style_nos:
+        before = len(style_map)
+        style_map = {sn: s for sn, s in style_map.items() if sn in kg_style_nos}
+        filtered_out = before - len(style_map)
+        if filtered_out:
+            print(f"  KG 미존재 스타일 {filtered_out}건 제외 (시즌 이월 등)")
+
     styles = sorted(style_map.values(), key=lambda x: x["eta"] or "9999")
 
     output = {
@@ -87,7 +106,7 @@ def extract_pending():
             "source": EXCEL_PATH.name,
             "synced_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "style_count": len(styles),
-            "sku_count": len(sku_rows),
+            "sku_count": sum(s["sku_count"] for s in styles),
         },
         "data": styles,
     }
