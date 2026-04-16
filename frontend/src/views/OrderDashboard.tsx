@@ -112,14 +112,13 @@ interface KpiData {
 interface PendingStyle {
   style_no: string;
   style_name: string;
-  color: string;
-  pcs: number;
   supplier: string;
-  eta: string | null;
-  is_m: number;
-  item_type: string;
   category: string;
   spot: string;
+  eta: string | null;
+  total_pcs: number;
+  colors: string[];
+  sku_count: number;
 }
 
 export default function OrderDashboard({ brand, season }: Props) {
@@ -691,53 +690,48 @@ export default function OrderDashboard({ brand, season }: Props) {
     prevPoints.forEach((p) => allElapsed.add(p.elapsed));
     const sortedElapsed = [...allElapsed].sort((a, b) => a - b);
 
-    // 미입고 예정 데이터로 예측 포인트 계산
-    const pendingByElapsed = new Map<number, { styles: Set<string>; qty: number; amt: number }>();
-    for (const p of pendingArrivals) {
-      if (!p.eta) continue;
-      const etaDt = new Date(p.eta);
-      let elapsed = Math.round((etaDt.getTime() - currDates.start.getTime()) / 86400000);
-      elapsed = Math.max(0, Math.min(elapsed, currDates.maxElapsed));
-      // 7일 단위로 반올림
-      elapsed = Math.round(elapsed / 7) * 7;
-      if (!pendingByElapsed.has(elapsed)) pendingByElapsed.set(elapsed, { styles: new Set(), qty: 0, amt: 0 });
-      const bucket = pendingByElapsed.get(elapsed)!;
-      bucket.styles.add(p.style_no.replace(/-.*/, ""));
-      bucket.qty += p.pcs || 0;
-      // 금액은 발주 데이터에서 매칭
-      const matchRow = currData.find((r) => r.PRDT_CD?.endsWith(p.style_no.replace(/-.*/, "")));
-      if (matchRow) bucket.amt += (matchRow.ORD_TAG_AMT || 0) / Math.max(currData.filter((r) => r.PRDT_CD === matchRow.PRDT_CD).length, 1);
-    }
-
-    // 현재 실적 마지막 값에서 시작하여 예정 누적
-    const lastCurrPoint = currPoints.filter((p) => p.elapsed <= todayElapsed).pop();
-    const baseRate = lastCurrPoint?.rate || 0;
-    const baseCum = lastCurrPoint?.cumValue || 0;
-    let forecastCumStyles = new Set<string>();
-    let forecastCumVal = 0;
-    // 이미 입고된 스타일 집합
-    const arrivedStyles = new Set(currData.filter((r) => (r.STOR_QTY || 0) > 0).map((r) => r.PRDT_CD));
-    const denom = progressMetric === "styles"
-      ? Math.max(new Set(currData.map((r) => r.PRDT_CD)).size, 1)
-      : progressMetric === "qty"
-      ? Math.max(currData.reduce((s, r) => s + (r.ORD_QTY || 0), 0), 1)
-      : Math.max(currData.reduce((s, r) => s + (r.ORD_TAG_AMT || 0), 0) / 1e8, 0.01);
-
+    // 미입고 예정 예측선 (스타일수 선택 시에만, 품번 기준)
+    const showForecast = progressMetric === "styles" && pendingArrivals.length > 0;
     const forecastPoints = new Map<number, number>();
-    const sortedPendingElapsed = [...pendingByElapsed.keys()].sort((a, b) => a - b);
-    for (const el of sortedPendingElapsed) {
-      const bucket = pendingByElapsed.get(el)!;
-      if (progressMetric === "styles") {
-        bucket.styles.forEach((s) => { if (!arrivedStyles.has(s)) forecastCumStyles.add(s); });
-        forecastPoints.set(el, baseRate + (forecastCumStyles.size / denom) * 100);
-      } else if (progressMetric === "qty") {
-        forecastCumVal += bucket.qty;
-        forecastPoints.set(el, baseRate + (forecastCumVal / denom) * 100);
-      } else {
-        forecastCumVal += bucket.amt / 1e8;
-        forecastPoints.set(el, baseRate + (forecastCumVal / denom) * 100);
+
+    if (showForecast) {
+      // ETA별 스타일 그룹핑 (7일 단위)
+      const pendingByElapsed = new Map<number, Set<string>>();
+      for (const p of pendingArrivals) {
+        if (!p.eta) continue;
+        const etaDt = new Date(p.eta);
+        let elapsed = Math.round((etaDt.getTime() - currDates.start.getTime()) / 86400000);
+        elapsed = Math.max(0, Math.min(elapsed, currDates.maxElapsed));
+        elapsed = Math.round(elapsed / 7) * 7;
+        if (!pendingByElapsed.has(elapsed)) pendingByElapsed.set(elapsed, new Set());
+        pendingByElapsed.get(elapsed)!.add(p.style_no);
+      }
+
+      // 현재 실적 마지막 값에서 시작
+      const lastCurrPoint = currPoints.filter((p) => p.elapsed <= todayElapsed).pop();
+      const baseRate = lastCurrPoint?.rate || 0;
+      const totalStyles = Math.max(new Set(currData.map((r) => r.PRDT_CD)).size, 1);
+      // 이미 입고된 PRDT_CD 집합
+      const arrivedPrdtCds = new Set(currData.filter((r) => (r.STOR_QTY || 0) > 0).map((r) => r.PRDT_CD));
+      const forecastCumStyles = new Set<string>();
+
+      const sortedPendingElapsed = [...pendingByElapsed.keys()].sort((a, b) => a - b);
+      for (const el of sortedPendingElapsed) {
+        pendingByElapsed.get(el)!.forEach((sn) => {
+          // PRDT_CD 매칭: currData에서 style_no가 포함된 PRDT_CD 찾기
+          const matchedPrdtCd = currData.find((r) => r.PRDT_CD?.endsWith(sn))?.PRDT_CD;
+          if (matchedPrdtCd && !arrivedPrdtCds.has(matchedPrdtCd)) {
+            forecastCumStyles.add(matchedPrdtCd);
+          } else if (!matchedPrdtCd) {
+            // 발주 데이터에 없는 스타일도 카운트
+            forecastCumStyles.add(sn);
+          }
+        });
+        forecastPoints.set(el, baseRate + (forecastCumStyles.size / totalStyles) * 100);
       }
     }
+
+    const sortedPendingElapsed = [...forecastPoints.keys()].sort((a, b) => a - b);
 
     const merged = sortedElapsed.map((elapsed) => {
         const refDate = new Date(currDates.start.getTime() + elapsed * 86400000);
@@ -745,20 +739,16 @@ export default function OrderDashboard({ brand, season }: Props) {
         const currMatch = currPoints.find((cp) => cp.elapsed === elapsed);
         const prevMatch = prevPoints.find((pp) => pp.elapsed === elapsed);
 
-        // 예측선: 오늘 마지막 실적에서 시작 + 예정 누적
+        // 예측 점선: 스타일수 선택 시에만
         let forecast: number | null = null;
-        if (pendingArrivals.length > 0 && elapsed >= todayElapsed - 7) {
+        if (showForecast && elapsed >= todayElapsed - 7) {
           if (elapsed <= todayElapsed) {
-            // 실적 마지막 포인트와 연결
             forecast = currMatch ? Math.round(currMatch.rate * 10) / 10 : null;
           } else if (forecastPoints.has(elapsed)) {
             forecast = Math.round(forecastPoints.get(elapsed)! * 10) / 10;
           } else {
-            // 보간: 가장 가까운 이전 예측값 사용
-            const prevForecast = sortedPendingElapsed.filter((e) => e <= elapsed).pop();
-            if (prevForecast !== undefined) {
-              forecast = Math.round(forecastPoints.get(prevForecast)! * 10) / 10;
-            }
+            const prevFc = sortedPendingElapsed.filter((e) => e <= elapsed).pop();
+            if (prevFc !== undefined) forecast = Math.round(forecastPoints.get(prevFc)! * 10) / 10;
           }
         }
 
@@ -895,7 +885,7 @@ export default function OrderDashboard({ brand, season }: Props) {
             <span className="flex items-center gap-1.5">
               <span className="w-4 h-0.5 bg-indigo-500 rounded" /> {season} 실적
             </span>
-            {pendingArrivals.length > 0 && (
+            {progressMetric === "styles" && pendingArrivals.length > 0 && (
               <span className="flex items-center gap-1.5">
                 <span className="w-4 h-0.5 bg-indigo-500 rounded" style={{ borderTop: "2px dashed #4f46e5", height: 0, background: "transparent" }} /> {season} 입고예정
               </span>
@@ -969,19 +959,22 @@ export default function OrderDashboard({ brand, season }: Props) {
             <ReferenceLine y={100} stroke="#e2e8f0" strokeDasharray="6 3" label={{ value: "100%", position: "right", fontSize: 10, fill: "#94a3b8" }} />
             <Area type="monotone" dataKey="전년" stroke="#cbd5e1" strokeWidth={2} fill="transparent" strokeDasharray="5 5" dot={false} />
             <Area type="monotone" dataKey="당해" stroke="#4f46e5" strokeWidth={2.5} fill="url(#gradCurr)" dot={{ fill: "#4f46e5", r: 3, strokeWidth: 0 }} activeDot={{ r: 6, stroke: "#4f46e5", strokeWidth: 2, fill: "#fff" }} connectNulls={false} />
-            {pendingArrivals.length > 0 && (
+            {progressMetric === "styles" && pendingArrivals.length > 0 && (
               <Area type="monotone" dataKey="예정" stroke="#4f46e5" strokeWidth={2} fill="transparent" strokeDasharray="6 4" dot={false} connectNulls={true} />
             )}
           </AreaChart>
         </ResponsiveContainer>
       </div>
 
-      {/* 금주 입고예정 */}
+      {/* 금주 입고예정 (스타일 기준) */}
       {thisWeekPending.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-100 p-6">
           <div className="flex items-center gap-4 mb-4">
             <h3 className="text-sm font-bold text-slate-700">📋 입고예정 (금주)</h3>
-            <span className="text-xs text-slate-400">{thisWeekPending.length}건 / 미입고 {pendingArrivals.length}건</span>
+            <span className="text-xs text-slate-400">
+              {thisWeekPending.length} STY / 미입고 {pendingArrivals.length} STY
+              {" "}/ {thisWeekPending.reduce((s, p) => s + p.total_pcs, 0).toLocaleString()} PCS
+            </span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-[11px] border-collapse">
@@ -990,7 +983,6 @@ export default function OrderDashboard({ brand, season }: Props) {
                   <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500 w-12">이미지</th>
                   <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">품번</th>
                   <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">스타일명</th>
-                  <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500">칼라</th>
                   <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500">구분</th>
                   <th className="px-3 py-2 text-right text-[10px] font-bold text-slate-500">발주수량</th>
                   <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">협력사</th>
@@ -1000,12 +992,12 @@ export default function OrderDashboard({ brand, season }: Props) {
               <tbody>
                 {thisWeekPending.map((p, i) => {
                   const brandPrefix = brand === "V" ? "V" : "ST";
-                  const prdtCd = `${brandPrefix}${season}${p.style_no.replace(/-.*/, "")}`;
+                  const prdtCd = `${brandPrefix}${season}${p.style_no}`;
                   const imgUrl = styleImages[prdtCd];
                   const etaDate = p.eta ? new Date(p.eta) : null;
                   const isToday = etaDate && etaDate.toDateString() === new Date().toDateString();
                   return (
-                    <tr key={`${p.style_no}-${p.color}-${i}`} className={`border-b border-slate-50 hover:bg-slate-50 ${isToday ? "bg-amber-50/50" : ""}`}>
+                    <tr key={`${p.style_no}-${i}`} className={`border-b border-slate-50 hover:bg-slate-50 ${isToday ? "bg-amber-50/50" : ""}`}>
                       <td className="px-3 py-2 text-center">
                         {imgUrl ? (
                           <img src={imgUrl} alt="" className="w-10 h-10 rounded-lg object-cover bg-slate-50 mx-auto" />
@@ -1013,13 +1005,15 @@ export default function OrderDashboard({ brand, season }: Props) {
                           <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-300 mx-auto text-lg">👗</div>
                         )}
                       </td>
-                      <td className="px-3 py-2 font-mono font-bold text-slate-700">{p.style_no}</td>
-                      <td className="px-3 py-2 text-slate-600">{p.style_name}</td>
-                      <td className="px-3 py-2 text-center font-mono text-slate-500">{p.color}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">{p.category || p.item_type}</span>
+                      <td className="px-3 py-2">
+                        <div className="font-mono font-bold text-slate-700">{p.style_no}</div>
+                        <div className="text-[10px] text-slate-400">{p.colors?.join(", ")}</div>
                       </td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-slate-700">{p.pcs.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-slate-600">{p.style_name}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">{p.category}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-slate-700">{p.total_pcs.toLocaleString()}</td>
                       <td className="px-3 py-2 text-slate-600">{p.supplier}</td>
                       <td className="px-3 py-2 text-center">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isToday ? "bg-amber-100 text-amber-700" : "bg-blue-50 text-blue-600"}`}>
