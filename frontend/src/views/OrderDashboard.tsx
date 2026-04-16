@@ -1281,11 +1281,9 @@ export default function OrderDashboard({ brand, season }: Props) {
           <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden flex flex-col">
             <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-700">📅 입고 예정 (금주)</h3>
-              {thisWeekPending.length > 0 && (
-                <span className="text-xs text-slate-400">
-                  {thisWeekPending.length} STY / {thisWeekPending.reduce((s, p) => s + p.total_pcs, 0).toLocaleString()} PCS
-                </span>
-              )}
+              <span className="text-xs text-slate-400">
+                {thisWeekPending.length > 0 ? `${thisWeekPending.length}건` : ""}
+              </span>
             </div>
             {thisWeekPending.length === 0 ? (
               <div className="flex items-center justify-center flex-1 min-h-[300px]">
@@ -1295,6 +1293,13 @@ export default function OrderDashboard({ brand, season }: Props) {
                 </div>
               </div>
             ) : (
+              <>
+              {/* 합계 행 */}
+              <div className="px-5 py-2.5 bg-slate-800 text-white flex items-center text-[11px] font-bold">
+                <span className="flex-1">합계</span>
+                <span className="px-3">{thisWeekPending.length} STY</span>
+                <span className="px-3 font-mono tabular-nums">{thisWeekPending.reduce((s, p) => s + p.total_pcs, 0).toLocaleString()} PCS</span>
+              </div>
               <div className="overflow-y-auto" style={{ maxHeight: "600px" }}>
                 <table className="w-full text-[12px]">
                   <thead className="sticky top-0 bg-slate-50 z-10">
@@ -1349,6 +1354,7 @@ export default function OrderDashboard({ brand, season }: Props) {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
         </div>
