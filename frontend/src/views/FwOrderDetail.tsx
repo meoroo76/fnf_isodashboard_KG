@@ -28,9 +28,6 @@ const PROGRESS_STAGES = [
   { label: "입고",     color: "#ef4444", cols: ["arrival_plan", "arrival_done"] },
 ];
 
-// ── 틀고정: 복종(item_type)까지 좌측 고정 ──
-const FROZEN_UP_TO = "item_type";
-
 // ── 유틸 ──
 function fmtDate(v: unknown): string {
   if (!v) return "";
@@ -139,8 +136,6 @@ export default function FwOrderDetail() {
   // 스타일 검색
   const [filterStyleNo, setFilterStyleNo] = useState("");
 
-  // 스크롤 동기화 ref
-  const frozenBodyRef = useRef<HTMLDivElement>(null);
   const scrollBodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -154,15 +149,6 @@ export default function FwOrderDetail() {
     const h = (e: MouseEvent) => { if (colPickerRef.current && !colPickerRef.current.contains(e.target as Node)) setShowColPicker(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
-  }, []);
-
-  // 스크롤 동기화 (좌우 세로 스크롤 연동)
-  const syncScroll = useCallback((source: "frozen" | "scroll") => {
-    const frozen = frozenBodyRef.current;
-    const scroll = scrollBodyRef.current;
-    if (!frozen || !scroll) return;
-    if (source === "frozen") scroll.scrollTop = frozen.scrollTop;
-    else frozen.scrollTop = scroll.scrollTop;
   }, []);
 
   // 담당자↔협력사 상호작용: 선택된 담당자의 협력사만 표시
@@ -246,25 +232,6 @@ export default function FwOrderDetail() {
     if (!payload) return [];
     return payload.columns.filter((c) => visibleGroups.has(c.group) && !hiddenCols.has(c.key));
   }, [payload, visibleGroups, hiddenCols]);
-
-  // 고정/스크롤 분리 (복종까지 고정)
-  const frozenCols = useMemo(() => {
-    const result: ColDef[] = [];
-    for (const col of visibleColumns) {
-      result.push(col);
-      if (col.key === FROZEN_UP_TO) break;
-    }
-    return result;
-  }, [visibleColumns]);
-
-  const scrollCols = useMemo(() => {
-    let found = false;
-    return visibleColumns.filter((c) => {
-      if (found) return true;
-      if (c.key === FROZEN_UP_TO) { found = true; return false; }
-      return false;
-    });
-  }, [visibleColumns]);
 
   // 편집
   const startEdit = useCallback((row: number, key: string, val: unknown) => {
@@ -497,87 +464,32 @@ export default function FwOrderDetail() {
         {hasAnyFilter && <button onClick={clearAll} className="text-[10px] text-red-400 hover:text-red-600 font-medium">필터 초기화</button>}
       </div>
 
-      {/* 틀고정 테이블 */}
+      {/* 테이블 */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-        <div className="flex" style={{ height: "75vh" }}>
-          {/* ── 좌측 고정 ── */}
-          <div className="flex-shrink-0 border-r-2 border-slate-300 flex flex-col" style={{ zIndex: 20 }}>
-            {/* 고정 헤더 */}
-            <div className="flex-shrink-0">
-              <table className="text-[11px] border-collapse whitespace-nowrap">
-                <thead>
-                  <tr className="border-b border-slate-200">{buildTopHeader(frozenCols)}</tr>
-                  {buildSubHeader(frozenCols, "left")}
-                </thead>
-              </table>
-            </div>
-            {/* 고정 바디 */}
-            <div ref={frozenBodyRef} className="flex-1 overflow-y-auto overflow-x-hidden"
-              onScroll={() => syncScroll("frozen")}
-              style={{ scrollbarWidth: "none" }}>
-              <table className="text-[11px] border-collapse whitespace-nowrap">
-                <tbody>
-                  {filteredData.map((row) => (
-                    <tr key={row._row} className="border-b border-slate-50 hover:bg-blue-50/30 h-[30px]">
-                      {frozenCols.map((col) => {
-                        const isPending = pendingChanges.has(`${row._row}:${col.key}`);
-                        return (
-                          <td key={col.key} className={`px-1.5 py-1 text-center font-mono tabular-nums text-[11px] ${isPending ? "ring-1 ring-blue-400 ring-inset" : ""} ${col.key === "style_name" ? "text-left max-w-[150px] truncate" : ""}`}>
-                            {renderCell(row, col)}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* ── 우측 스크롤 ── */}
-          <div className="flex-1 flex flex-col min-w-0">
-            {/* 스크롤 헤더 */}
-            <div className="flex-shrink-0 overflow-x-auto" style={{ scrollbarWidth: "none" }}
-              ref={(el) => {
-                // 가로 스크롤 동기화를 위한 ref
-                if (el) {
-                  const body = scrollBodyRef.current;
-                  if (body) {
-                    el.onscroll = () => { body.scrollLeft = el.scrollLeft; };
-                  }
-                }
-              }}>
-              <table className="text-[11px] border-collapse whitespace-nowrap">
-                <thead>
-                  <tr className="border-b border-slate-200">{buildTopHeader(scrollCols)}</tr>
-                  {buildSubHeader(scrollCols, "right")}
-                </thead>
-              </table>
-            </div>
-            {/* 스크롤 바디 (가로+세로 스크롤바 표시) */}
-            <div ref={scrollBodyRef} className="flex-1 overflow-auto"
-              onScroll={() => syncScroll("scroll")}>
-              <table className="text-[11px] border-collapse whitespace-nowrap">
-                <tbody>
-                  {filteredData.map((row) => (
-                    <tr key={row._row} className="border-b border-slate-50 hover:bg-blue-50/30 h-[30px]">
-                      {scrollCols.map((col) => {
-                        const isPending = pendingChanges.has(`${row._row}:${col.key}`);
-                        const isStageEnd = col.group === "progress" && PROGRESS_STAGES.some((s) => s.cols[s.cols.length - 1] === col.key);
-                        return (
-                          <td key={col.key}
-                            className={`px-1.5 py-1 text-center font-mono tabular-nums text-[11px] ${isStageEnd ? "border-r border-slate-100" : ""} ${isPending ? "ring-1 ring-blue-400 ring-inset" : ""}`}
-                            style={col.key === "remark" || col.key === "md_history" ? { maxWidth: "120px" } : undefined}>
-                            {renderCell(row, col)}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+        <div ref={scrollBodyRef} className="overflow-auto" style={{ maxHeight: "75vh" }}>
+          <table className="text-[11px] border-collapse whitespace-nowrap">
+            <thead className="sticky top-0 z-20">
+              <tr className="border-b border-slate-200">{buildTopHeader(visibleColumns)}</tr>
+              {buildSubHeader(visibleColumns, "right")}
+            </thead>
+            <tbody>
+              {filteredData.map((row) => (
+                <tr key={row._row} className="border-b border-slate-50 hover:bg-blue-50/30 h-[30px]">
+                  {visibleColumns.map((col) => {
+                    const isPending = pendingChanges.has(`${row._row}:${col.key}`);
+                    const isStageEnd = col.group === "progress" && PROGRESS_STAGES.some((s) => s.cols[s.cols.length - 1] === col.key);
+                    return (
+                      <td key={col.key}
+                        className={`px-1.5 py-1 text-center font-mono tabular-nums text-[11px] ${isStageEnd ? "border-r border-slate-100" : ""} ${isPending ? "ring-1 ring-blue-400 ring-inset" : ""} ${col.key === "style_name" ? "text-left max-w-[150px] truncate" : ""}`}
+                        style={col.key === "remark" || col.key === "md_history" ? { maxWidth: "120px" } : undefined}>
+                        {renderCell(row, col)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
