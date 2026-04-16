@@ -356,13 +356,18 @@ export default function FwOrderDetail() {
         else groups.push({ key: col.group, label: meta?.label || col.group, color: meta?.color || "#333", bg: "", count: 1 });
       }
     }
-    return groups.map((g, i) => (
-      <th key={`${g.key}-${i}`} colSpan={g.count}
-        className={`px-1 py-1.5 text-center text-[10px] font-bold border-r border-slate-200 ${g.bg ? "" : GROUP_META[g.key]?.bg || "bg-slate-100"}`}
-        style={g.bg ? { color: g.color, backgroundColor: g.bg } : { color: g.color }}>
-        {g.label}
-      </th>
-    ));
+    return groups.map((g, i) => {
+      // 불투명 배경 — 스크롤 시 내용이 비치지 않도록
+      const bgColor = g.bg ? g.bg.replace(/08$/, "18") : undefined; // 8% → ~10% opacity 보정
+      const fallbackClass = GROUP_META[g.key]?.bg || "bg-slate-100";
+      return (
+        <th key={`${g.key}-${i}`} colSpan={g.count}
+          className={`px-1 py-1.5 text-center text-[10px] font-bold border-r border-slate-200 ${bgColor ? "" : fallbackClass}`}
+          style={bgColor ? { color: g.color, backgroundColor: "white" } : { color: g.color }}>
+          <span style={bgColor ? { color: g.color } : undefined}>{g.label}</span>
+        </th>
+      );
+    });
   };
 
   // ── 하위 헤더 (필터 포함) ──
@@ -378,7 +383,7 @@ export default function FwOrderDetail() {
         const hasFilter = filterOpts && filterOpts.length > 1;
 
         return (
-          <th key={col.key} className={`px-1 py-1.5 text-center text-[10px] font-semibold text-slate-500 ${GROUP_META[col.group]?.bg || ""}`}
+          <th key={col.key} className={`px-1 py-1.5 text-center text-[10px] font-semibold text-slate-500 bg-white`}
             style={col.key === "remark" || col.key === "md_history" ? { maxWidth: "120px" } : undefined}>
             {shortLabel}
             {col.editable && <span className="text-blue-400 ml-0.5">*</span>}
