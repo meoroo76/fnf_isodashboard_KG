@@ -79,6 +79,7 @@ const MENU: MenuCategory[] = [
     icon: <Factory size={18} />,
     pages: [
       { label: "오더 현황", key: "supplier_order", icon: <BarChart3 size={16} /> },
+      { label: "26FW 진행상세", key: "fw_order_detail", icon: <ClipboardCheck size={16} /> },
       { label: "스코어카드", key: "scorecard", icon: <Award size={16} /> },
       { label: "랭킹", key: "ranking", icon: <Trophy size={16} /> },
       { label: "상세 분석", key: "detail_panel", icon: <Eye size={16} /> },

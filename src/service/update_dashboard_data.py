@@ -527,7 +527,7 @@ def main():
     parser = argparse.ArgumentParser(description="대시보드 데이터 자동 업데이트")
     parser.add_argument("--no-push", action="store_true", help="git push 생략")
     parser.add_argument("--dry-run", action="store_true", help="API 호출 없이 구조만 확인")
-    parser.add_argument("--only", choices=["order", "claims", "cost", "voc", "images", "inbound", "inbound-daily", "sale"], help="특정 데이터만 업데이트")
+    parser.add_argument("--only", choices=["order", "claims", "cost", "voc", "images", "inbound", "inbound-daily", "sale", "excel"], help="특정 데이터만 업데이트")
     args = parser.parse_args()
 
     all_seasons = ACTIVE_SEASONS + list(PREV_SEASONS.values())
@@ -594,6 +594,15 @@ def main():
     if not args.only or args.only == "images":
         log(f"\n[8] 제품 이미지 매핑")
         update_product_images()
+
+    # 9. 엑셀 생산스케줄 동기화
+    if not args.only or args.only == "excel":
+        log(f"\n[9] 엑셀 생산스케줄 동기화")
+        try:
+            from service.sync_fw_orderlist import excel_to_json
+            excel_to_json()
+        except Exception as e:
+            log(f"  [ERROR] 엑셀 동기화 실패: {e}")
 
     # ── git commit & push ──
     log(f"\n{'='*40}")

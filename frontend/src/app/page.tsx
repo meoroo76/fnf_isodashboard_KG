@@ -19,6 +19,7 @@ import SupplierRanking from "@/views/SupplierRanking";
 import SupplierDetail from "@/views/SupplierDetail";
 import SupplierEval from "@/views/SupplierEval";
 import SupplierOrder from "@/views/SupplierOrder";
+import FwOrderDetail from "@/views/FwOrderDetail";
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType<{ brand: string; season: string }>> = {
   // 생산
@@ -38,6 +39,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<{ brand: string; seaso
   voc_analysis: VocAnalysis,
   // 협력사
   supplier_order: SupplierOrder,
+  fw_order_detail: FwOrderDetail as unknown as React.ComponentType<{ brand: string; season: string }>,
   scorecard: SupplierScorecard,
   ranking: SupplierRanking,
   detail_panel: SupplierDetail,
