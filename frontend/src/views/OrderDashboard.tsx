@@ -128,7 +128,7 @@ export default function OrderDashboard({ brand, season }: Props) {
     Promise.all([
       api.getOrderInbound(brand, season),
       api.getOrderInbound(brand, prevSeason),
-      api.getSeasonSale(brand),
+      api.getSeasonSale(brand, season),
       api.getInboundBooking(brand, season),
       api.getInboundDaily(brand, season),
     ]).then(([curr, prev, sale, inbound, daily]) => {
@@ -248,18 +248,18 @@ export default function OrderDashboard({ brand, season }: Props) {
         },
       },
       {
-        label: "판매금액",
-        value: currSaleAmt > 0 ? formatNumber(currSaleAmt, "억") : "-",
-        unit: currSaleAmt > 0 ? "억원" : "",
+        label: "신제품 매출",
+        value: formatNumber(currSaleAmt, "억"),
+        unit: "억원",
         icon: "💰",
         delta: calcYoY(currSaleAmt, prevSaleAmt),
-        prevValue: prevSaleAmt > 0 ? `전년 동기간 ${formatNumber(prevSaleAmt, "억")}억 · ${prevSaleQty.toLocaleString()} PCS` : "전년 데이터 없음",
+        prevValue: `전년 동일 ${formatNumber(prevSaleAmt, "억")}억 · ${prevSaleQty.toLocaleString()} PCS`,
         accent: "#d97706",
         sub: {
           label: "판매율",
-          value: currSaleRate > 0 ? currSaleRate.toFixed(1) : "0.0",
+          value: currSaleRate.toFixed(1),
           delta: currSaleRate - prevSaleRate,
-          detail: `판매 ${currSaleQty.toLocaleString()} PCS · 전년 판매율 ${prevSaleRate > 0 ? prevSaleRate.toFixed(1) + "%" : "-"}`,
+          detail: `당해 ${currSaleQty.toLocaleString()} PCS · 전년 동일 ${prevSaleQty.toLocaleString()} PCS · 전년 판매율 ${prevSaleRate > 0 ? prevSaleRate.toFixed(1) + "%" : "-"}`,
         },
       },
     ];

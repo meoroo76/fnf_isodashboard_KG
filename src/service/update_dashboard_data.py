@@ -29,14 +29,17 @@ BRANDS = {
     "ST": "sergio",
 }
 
-# 운영 시즌 (업데이트 대상) — 현재 + 전년 동기간
+# 운영 시즌 (업데이트 대상) - 현재 + 전년 동기간
 ACTIVE_SEASONS = ["26S", "26F"]  # 26SS, 26FW
 PREV_SEASONS = {"26S": "25S", "26F": "25F"}  # 전년 동기간 매핑
 
 
 def log(msg: str):
     ts = datetime.now().strftime("%H:%M:%S")
-    print(f"[{ts}] {msg}")
+    try:
+        print(f"[{ts}] {msg}")
+    except UnicodeEncodeError:
+        print(f"[{ts}] {msg.encode('ascii', errors='replace').decode('ascii')}")
 
 
 def call_cli(endpoint: str, method: str, body: dict, name: str) -> Path | None:
@@ -91,7 +94,7 @@ def save_json(data, filename: str, protect_existing: bool = True):
     if protect_existing and isinstance(data, list) and len(data) == 0 and out.exists():
         existing_size = out.stat().st_size
         if existing_size > 10:  # 기존 파일에 데이터가 있으면 덮어쓰지 않음
-            log(f"  ⚠ 건너뜀: {filename} — API 0건 반환, 기존 데이터 보호 ({existing_size / 1024:.0f} KB)")
+            log(f"  [SKIP] 건너뜀: {filename} - API 0건 반환, 기존 데이터 보호 ({existing_size / 1024:.0f} KB)")
             return
     with open(out, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
@@ -391,14 +394,14 @@ def update_season_sale(brd_cd: str, brand_name: str, season: str):
             "requested_record_rows": 20000,
         },
     }
-    name = f"{brand_name}_season_sale"
+    name = f"{brand_name}_{season.lower()}_season_sale"
     filepath = call_cli(
         "/api/v1/hq/sales_analysis/product/season_wear_order_stor_sale_stock",
         "POST", body, name,
     )
     if filepath:
         rows = extract_data(filepath)
-        save_json(rows, f"{brand_name}_season_sale.json")
+        save_json(rows, f"{brand_name}_{season.lower()}_season_sale.json")
 
 
 def update_inbound_booking(brd_cd: str, brand_name: str, season: str):
@@ -499,7 +502,7 @@ def git_commit_and_push(no_push: bool = False):
 
     all_files = changed + untracked
     if not all_files:
-        log("변경된 데이터 파일 없음 — 커밋 생략")
+        log("변경된 데이터 파일 없음 - 커밋 생략")
         return
 
     log(f"변경 파일: {len(all_files)}개")
@@ -590,7 +593,7 @@ def main():
                 log(f"\n[7] 시즌 판매 ({brand_name}/{season})")
                 update_season_sale(brd_cd, brand_name, season)
 
-    # 8. 이미지 매핑 — 전 브랜드 통합
+    # 8. 이미지 매핑 - 전 브랜드 통합
     if not args.only or args.only == "images":
         log(f"\n[8] 제품 이미지 매핑")
         update_product_images()

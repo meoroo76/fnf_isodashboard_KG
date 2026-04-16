@@ -302,16 +302,21 @@ export const api = {
     } catch { return { data: [], count: 0 }; }
   },
 
-  getSeasonSale: async (brdCd: string): Promise<ApiDataResponse<SeasonSale>> => {
-    try { return await fetchApi<ApiDataResponse<SeasonSale>>("/api/season-sale", { brd_cd: brdCd }); } catch {}
-    const filename = `${brandFile(brdCd)}_season_sale.json`;
-    try {
-      const res = await fetch(`/data/${filename}`);
-      if (!res.ok) return { data: {} };
-      const raw = await res.json();
-      const rows = parseRows(raw);
-      return { data: (rows[0] || {}) as SeasonSale };
-    } catch { return { data: {} }; }
+  getSeasonSale: async (brdCd: string, sesn?: string): Promise<ApiDataResponse<SeasonSale>> => {
+    try { return await fetchApi<ApiDataResponse<SeasonSale>>("/api/season-sale", { brd_cd: brdCd, ...(sesn ? { sesn } : {}) }); } catch {}
+    // 시즌별 파일 우선, 없으면 레거시 파일명
+    const seasonFile = sesn ? `${brandFile(brdCd)}_${sesn.toLowerCase()}_season_sale.json` : null;
+    const legacyFile = `${brandFile(brdCd)}_season_sale.json`;
+    for (const filename of [seasonFile, legacyFile].filter(Boolean) as string[]) {
+      try {
+        const res = await fetch(`/data/${filename}`);
+        if (!res.ok) continue;
+        const raw = await res.json();
+        const rows = parseRows(raw);
+        if (rows.length > 0) return { data: (rows[0] || {}) as SeasonSale };
+      } catch { continue; }
+    }
+    return { data: {} };
   },
 
   getSeasonSaleSummary: async (brdCd: string, sesn: string): Promise<ApiDataResponse<Record<string, unknown>>> => {
